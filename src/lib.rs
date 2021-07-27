@@ -1,3 +1,3 @@
 mod stream;
 
-pub use stream::{Stream, StreamErr};
+pub use stream::{Stream, StreamErr, FromSamples};

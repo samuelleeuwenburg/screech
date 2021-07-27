@@ -18,20 +18,6 @@ pub struct Stream {
     pub channels: usize,
 }
 
-/// Convert u8 to point value (f32 between -1.0 and 1.0)
-pub fn u8_to_point(n: u8) -> Point {
-    (n as f32 / u8::MAX as f32) * 2.0 - 1.0
-}
-
-/// Convert i16 to point value (f32 between -1.0 and 1.0)
-pub fn i16_to_point(n: i16) -> Point {
-    n as f32 / i16::MAX as f32
-}
-
-/// Convert i32 to point value (f32 between -1.0 and 1.0)
-pub fn i32_to_point(n: i32) -> Point {
-    n as f32 / i32::MAX as f32
-}
 
 impl Stream {
     /// Create zero initialized (silent) stream
@@ -42,14 +28,9 @@ impl Stream {
         }
     }
 
-    /// Create new stream based on provided samples
-    pub fn from_samples(samples: Vec<Point>, channels: usize) -> Self {
-        Stream { samples, channels }
-    }
-
     /// Returns the length of the stream
     ///
-    /// *note* this does not take into account the amount of channels
+    /// **note** this does not take into account the amount of channels
     pub fn len(&self) -> usize {
         self.samples.len()
     }
@@ -62,13 +43,14 @@ impl Stream {
         }
     }
 
+
     /// Mix together multiple streams into the given stream
     ///
-    /// *note* the size of the stream is unchanged,
+    /// **note** the size of the stream is unchanged,
     /// if the other streams are shorter it inserts silence (0.0)
     /// if the other streams are longer the remaining points are ignored
     ///
-    /// *note* this is a naive mix, it does not take into account the channel size, 
+    /// **note** this is a naive mix, it does not take into account the channel size,
     /// it assumes you are mixing together channels of the same size
     pub fn mix(&mut self, streams: &Vec<&Stream>) -> &mut Self {
         for (i, sample) in self.samples.iter_mut().enumerate() {
@@ -81,6 +63,8 @@ impl Stream {
     }
 
     /// Amplify a stream by decibels
+    ///
+    /// **note** clamps values at -1.0 and 1.0
     pub fn amplify(&mut self, db: f32) -> &mut Self {
         let ratio = 10_f32.powf(db / 20.0);
 
@@ -90,6 +74,58 @@ impl Stream {
 
         self
     }
+}
+
+pub trait FromSamples<T: Sized> {
+    /// Create new stream based on provided samples
+    fn from_samples(samples: Vec<T>, channels: usize) -> Stream;
+}
+
+impl FromSamples<u8> for Stream {
+    /// Create new stream based on u8 samples,
+    /// converts u8 to point value (f32 between -1.0 and 1.0)
+    fn from_samples(samples: Vec<u8>, channels: usize) -> Stream {
+        Stream { samples: samples.into_iter().map(u8_to_point).collect(), channels }
+    }
+}
+
+impl FromSamples<i16> for Stream {
+    /// Create new stream based on i16 samples,
+    /// converts i16 to point value (f32 between -1.0 and 1.0)
+    fn from_samples(samples: Vec<i16>, channels: usize) -> Stream {
+        Stream { samples: samples.into_iter().map(i16_to_point).collect(), channels }
+    }
+}
+
+impl FromSamples<i32> for Stream {
+    /// Create new stream based on i32 samples,
+    /// converts i32 to point value (f32 between -1.0 and 1.0)
+    fn from_samples(samples: Vec<i32>, channels: usize) -> Stream {
+        Stream { samples: samples.into_iter().map(i32_to_point).collect(), channels }
+    }
+}
+
+impl FromSamples<f32> for Stream {
+    /// Create new stream based on f32 samples
+    fn from_samples(samples: Vec<f32>, channels: usize) -> Stream {
+	// @TODO: clamp values?
+        Stream { samples, channels }
+    }
+}
+
+/// Convert u8 to point value (f32 between -1.0 and 1.0)
+fn u8_to_point(n: u8) -> Point {
+    (n as f32 / u8::MAX as f32) * 2.0 - 1.0
+}
+
+/// Convert i16 to point value (f32 between -1.0 and 1.0)
+fn i16_to_point(n: i16) -> Point {
+    n as f32 / i16::MAX as f32
+}
+
+/// Convert i32 to point value (f32 between -1.0 and 1.0)
+fn i32_to_point(n: i32) -> Point {
+    n as f32 / i32::MAX as f32
 }
 
 #[cfg(test)]
