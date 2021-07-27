@@ -1,3 +1,7 @@
+use alloc::vec;
+use alloc::vec::Vec;
+use libm::powf;
+
 pub type BufferSize = usize;
 
 pub type Point = f32;
@@ -17,7 +21,6 @@ pub struct Stream {
     /// amount of channels
     pub channels: usize,
 }
-
 
 impl Stream {
     /// Create zero initialized (silent) stream
@@ -43,7 +46,6 @@ impl Stream {
         }
     }
 
-
     /// Mix together multiple streams into the given stream
     ///
     /// **note** the size of the stream is unchanged,
@@ -66,7 +68,7 @@ impl Stream {
     ///
     /// **note** clamps values at -1.0 and 1.0
     pub fn amplify(&mut self, db: f32) -> &mut Self {
-        let ratio = 10_f32.powf(db / 20.0);
+        let ratio = powf(10.0, db / 20.0);
 
         for sample in self.samples.iter_mut() {
             *sample = (sample.clone() * ratio).clamp(-1.0, 1.0);
@@ -85,7 +87,10 @@ impl FromSamples<u8> for Stream {
     /// Create new stream based on u8 samples,
     /// converts u8 to point value (f32 between -1.0 and 1.0)
     fn from_samples(samples: Vec<u8>, channels: usize) -> Stream {
-        Stream { samples: samples.into_iter().map(u8_to_point).collect(), channels }
+        Stream {
+            samples: samples.into_iter().map(u8_to_point).collect(),
+            channels,
+        }
     }
 }
 
@@ -93,7 +98,10 @@ impl FromSamples<i16> for Stream {
     /// Create new stream based on i16 samples,
     /// converts i16 to point value (f32 between -1.0 and 1.0)
     fn from_samples(samples: Vec<i16>, channels: usize) -> Stream {
-        Stream { samples: samples.into_iter().map(i16_to_point).collect(), channels }
+        Stream {
+            samples: samples.into_iter().map(i16_to_point).collect(),
+            channels,
+        }
     }
 }
 
@@ -101,14 +109,17 @@ impl FromSamples<i32> for Stream {
     /// Create new stream based on i32 samples,
     /// converts i32 to point value (f32 between -1.0 and 1.0)
     fn from_samples(samples: Vec<i32>, channels: usize) -> Stream {
-        Stream { samples: samples.into_iter().map(i32_to_point).collect(), channels }
+        Stream {
+            samples: samples.into_iter().map(i32_to_point).collect(),
+            channels,
+        }
     }
 }
 
 impl FromSamples<f32> for Stream {
     /// Create new stream based on f32 samples
     fn from_samples(samples: Vec<f32>, channels: usize) -> Stream {
-	// @TODO: clamp values?
+        // @TODO: clamp values?
         Stream { samples, channels }
     }
 }
@@ -221,5 +232,32 @@ mod tests {
         assert_eq!(i32_to_point(i32::MIN + 1), -1.0);
         assert_eq!(i32_to_point(0i32), 0.0);
         assert_eq!(i32_to_point(i32::MAX), 1.0);
+    }
+
+    #[test]
+    fn test_from_u8() {
+        let stream = Stream::from_samples(vec![0, 80, 128, 220, 256u8], 1);
+        assert_eq!(
+            stream.samples,
+            vec![-1.0, -0.372549, 0.003921628, 0.7254902, -1.0]
+        );
+    }
+
+    #[test]
+    fn test_from_i16() {
+        let stream = Stream::from_samples(vec![i16::MIN + 1, -1600, 0, 2800, i16::MAX], 1);
+        assert_eq!(
+            stream.samples,
+            vec![-1.0, -0.048829615, 0.0, 0.08545183, 1.0]
+        );
+    }
+
+    #[test]
+    fn test_from_i32() {
+        let stream = Stream::from_samples(vec![i32::MIN, -1_147_483_647, 0, 1_147_483_647, i32::MAX], 1);
+        assert_eq!(
+            stream.samples,
+            vec![-1.0, -0.5343387, 0.0, 0.5343387, 1.0]
+        );
     }
 }

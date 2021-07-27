@@ -7,4 +7,7 @@ description = "collection of helpers to handle audio"
 repository = "https://github.com/samuelleeuwenburg/screech"
 documentation = "https://docs.rs/wavv"
 license = "Apache-2.0"
-keywords = ["audio"]
+keywords = ["audio", "no_std"]
+
+[dependencies]
+libm = "0.2.1"
