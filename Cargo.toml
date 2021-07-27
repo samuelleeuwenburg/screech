@@ -1,9 +1,9 @@
 [package]
 name = "screech"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Samuel Leeuwenburg <samleeuwenburg@gmail.com>"]
 edition = "2018"
-description = "collection of helpers to handle audio"
+description = "collection of helpers for handling audio"
 repository = "https://github.com/samuelleeuwenburg/screech"
 documentation = "https://docs.rs/wavv"
 license = "Apache-2.0"

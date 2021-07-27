@@ -78,6 +78,7 @@ impl Stream {
     }
 }
 
+/// Trait to implement conversion from sized types to a f32 Stream
 pub trait FromSamples<T: Sized> {
     /// Create new stream based on provided samples
     fn from_samples(samples: Vec<T>, channels: usize) -> Stream;
@@ -254,10 +255,10 @@ mod tests {
 
     #[test]
     fn test_from_i32() {
-        let stream = Stream::from_samples(vec![i32::MIN, -1_147_483_647, 0, 1_147_483_647, i32::MAX], 1);
-        assert_eq!(
-            stream.samples,
-            vec![-1.0, -0.5343387, 0.0, 0.5343387, 1.0]
+        let stream = Stream::from_samples(
+            vec![i32::MIN, -1_147_483_647, 0, 1_147_483_647, i32::MAX],
+            1,
         );
+        assert_eq!(stream.samples, vec![-1.0, -0.5343387, 0.0, 0.5343387, 1.0]);
     }
 }

@@ -5,4 +5,4 @@
 
 **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
-A collection of helpers to handle audio
+A collection of helpers for handling audio
