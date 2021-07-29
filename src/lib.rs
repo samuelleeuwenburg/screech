@@ -8,9 +8,11 @@
 extern crate alloc;
 
 mod traits;
-mod sample;
 mod stream;
+mod signal;
+mod clip;
 
-pub use traits::Playable;
-pub use sample::Sample;
-pub use stream::{FromSamples, Stream, StreamErr};
+pub use traits::Sample;
+pub use stream::{FromPoints, Stream, StreamErr};
+pub use signal::Signal;
+pub use clip::Clip;
