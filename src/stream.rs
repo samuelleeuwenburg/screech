@@ -3,6 +3,7 @@ use crate::alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 use libm::powf;
 
+/// Type alias representing audio data
 pub type Point = f32;
 
 /// Error type for different Stream failures
@@ -35,7 +36,7 @@ impl Stream {
     }
 
     /// Get point for provided position argument, errors when the index does not exist in the stream
-    pub fn get_point(&self, position: usize) -> Result<f32, StreamErr> {
+    pub fn get_point(&self, position: usize) -> Result<Point, StreamErr> {
         match self.points.get(position) {
             Some(&f) => Ok(f),
             None => Err(StreamErr::NonExistentIndex(position)),
@@ -96,7 +97,7 @@ impl Stream {
     }
 }
 
-/// Trait to implement conversion from sized types to a f32 Stream
+/// Trait to implement conversion from sized types to a [`Point`] Stream
 pub trait FromPoints<T: Sized> {
     /// Create new stream based on provided points
     fn from_points(points: &[T]) -> Stream;

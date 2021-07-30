@@ -7,12 +7,14 @@
 
 extern crate alloc;
 
-mod traits;
-mod stream;
-mod signal;
-mod clip;
+/// Common traits used throughout the library
+pub mod traits;
 
-pub use traits::Sample;
-pub use stream::{FromPoints, Stream, StreamErr};
-pub use signal::Signal;
-pub use clip::Clip;
+/// Struct representing a stream of audio data
+pub mod stream;
+
+/// Wrapper type to handle contextual channel manipulation for [`crate::stream::Stream`]
+pub mod signal;
+
+/// Most basic building block for non-generated sound
+pub mod clip;
