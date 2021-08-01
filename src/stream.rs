@@ -2,6 +2,7 @@ use alloc::vec;
 use crate::alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 use libm::powf;
+use crate::traits::FromPoints;
 
 /// Type alias representing audio data
 pub type Point = f32;
@@ -97,13 +98,7 @@ impl Stream {
     }
 }
 
-/// Trait to implement conversion from sized types to a [`Point`] Stream
-pub trait FromPoints<T: Sized> {
-    /// Create new stream based on provided points
-    fn from_points(points: &[T]) -> Stream;
-}
-
-impl FromPoints<u8> for Stream {
+impl FromPoints<u8, Stream> for Stream {
     /// Create new stream based on u8 points,
     /// converts u8 to point value (f32 between -1.0 and 1.0)
     fn from_points(points: &[u8]) -> Stream {
@@ -113,7 +108,7 @@ impl FromPoints<u8> for Stream {
     }
 }
 
-impl FromPoints<i16> for Stream {
+impl FromPoints<i16, Stream> for Stream {
     /// Create new stream based on i16 points,
     /// converts i16 to point value (f32 between -1.0 and 1.0)
     fn from_points(points: &[i16]) -> Stream {
@@ -123,7 +118,7 @@ impl FromPoints<i16> for Stream {
     }
 }
 
-impl FromPoints<i32> for Stream {
+impl FromPoints<i32, Stream> for Stream {
     /// Create new stream based on i32 points,
     /// converts i32 to point value (f32 between -1.0 and 1.0)
     fn from_points(points: &[i32]) -> Stream {
@@ -133,7 +128,7 @@ impl FromPoints<i32> for Stream {
     }
 }
 
-impl FromPoints<f32> for Stream {
+impl FromPoints<f32, Stream> for Stream {
     /// Create new stream based on f32 points
     fn from_points(points: &[f32]) -> Stream {
         // @TODO: clamp values?

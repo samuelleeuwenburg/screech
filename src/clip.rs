@@ -1,5 +1,6 @@
+use crate::stream::Stream;
 use crate::signal::Signal;
-use crate::traits::Sample;
+use crate::traits::{Sample, FromPoints};
 use core::cmp;
 
 /// Most basic building block for non-generated sound
@@ -86,15 +87,13 @@ impl Sample for Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::{FromPoints, Stream};
+    use crate::traits::FromPoints;
+    use crate::stream::Stream;
     use alloc::vec;
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
-        let signal = Signal::Mono(Stream::from_points(&[
-            0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
-        ]));
-        let mut clip = Clip::new(signal);
+        let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
         let buffer_size = 5;
 
         assert_eq!(
@@ -121,8 +120,7 @@ mod tests {
 
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
-        let signal = Signal::Mono(Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
-        let mut clip = Clip::new(signal);
+        let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]);
         let buffer_size = 8;
 
         assert_eq!(
@@ -141,9 +139,8 @@ mod tests {
 
     #[test]
     fn test_play_oneshot() {
-        let signal = Signal::Mono(Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
         let buffer_size = 8;
-        let mut clip = Clip::new(signal);
+        let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]);
 
         clip.play_style = PlayStyle::OneShot;
 
@@ -160,5 +157,29 @@ mod tests {
                 points: vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             })
         );
+    }
+}
+
+impl FromPoints<f32, Clip> for Clip {
+    fn from_points(points: &[f32]) -> Clip {
+	Clip::new(Signal::Mono(Stream::from_points(points)))
+    }
+}
+
+impl FromPoints<i32, Clip> for Clip {
+    fn from_points(points: &[i32]) -> Clip {
+	Clip::new(Signal::Mono(Stream::from_points(points)))
+    }
+}
+
+impl FromPoints<i16, Clip> for Clip {
+    fn from_points(points: &[i16]) -> Clip {
+	Clip::new(Signal::Mono(Stream::from_points(points)))
+    }
+}
+
+impl FromPoints<u8, Clip> for Clip {
+    fn from_points(points: &[u8]) -> Clip {
+	Clip::new(Signal::Mono(Stream::from_points(points)))
     }
 }

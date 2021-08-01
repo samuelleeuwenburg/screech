@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use crate::signal::Signal;
 
 /// To implement [`Sample`] means something can be a source of sound,
@@ -22,11 +23,17 @@ pub trait Sample {
 /// Something that can source one or multiple signals
 ///
 /// [`crate::track::Track`] as an example implements [`Source`]
-pub trait Source<T: Sample> {
+pub trait Source {
     /// type to define how to use the source, for example using an `Enum` type allows mulitple
     /// sources to be set and overwritten to "internal destinations"
     type Destination;
 
     /// Set source to sample from, must implement [`Sample`]
-    fn set_source(self, destination: Self::Destination, source: T) -> Self;
+    fn set_source(self, destination: Self::Destination, source: Box<dyn Sample>) -> Self;
+}
+
+/// Trait to implement conversion from a slice of sized types to a generic
+pub trait FromPoints<T: Sized, U> {
+    /// Create new instance based on sequence of points
+    fn from_points(points: &[T]) -> U;
 }

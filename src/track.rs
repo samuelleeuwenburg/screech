@@ -1,14 +1,12 @@
+use alloc::boxed::Box;
 use crate::traits::{Sample, Source};
 use crate::stream::Point;
 use crate::signal::Signal;
 
-/// Generic track type as known in common DAWs
-///
-/// has gain and panning parameters
-#[derive(Debug, PartialEq, Clone)]
-pub struct Track<T: Sample> {
+/// Standard track with panning and volume control
+pub struct Track {
     /// Main input to used for the output of the track
-    pub main_input: Option<T>,
+    pub main_input: Option<Box<dyn Sample>>,
     /// Gain setting, -1.0 to 1.0 for -114dB and +6dB respectively
     pub gain: Point,
     /// Panning setting, -1.0 to 1.0 for -114dB and +6dB respectively
@@ -16,18 +14,18 @@ pub struct Track<T: Sample> {
     pub panning: Point,
 }
 
-impl<T: Sample> Track<T> {
+impl Track {
     /// Create new track with no source attached to the `Destination::In`
     /// ```
     /// use screech::track::Track;
     /// use screech::clip::Clip;
     ///
-    /// assert_eq!(
-    ///     Track::<Clip>::new(),
-    ///     Track { main_input: None, gain: 0.9, panning: 0.0 }
-    /// )
+    /// let track = Track::new();
+    ///
+    /// assert_eq!(track.gain, 0.9);
+    /// assert_eq!(track.panning, 0.0);
     /// ```
-    pub fn new() -> Track<T> {
+    pub fn new() -> Track {
         Track { main_input: None, gain: 0.9, panning: 0. }
     }
 
@@ -37,14 +35,14 @@ impl<T: Sample> Track<T> {
     /// For example setting a gain of `1.0` gives +6dB of amplification
     /// and setting a gain of `-1.0` would result in -114dB
     /// ```
-    /// use screech::traits::{Sample, Source};
-    /// use screech::stream::{Stream, FromPoints};
+    /// use screech::traits::{Sample, Source, FromPoints};
+    /// use screech::stream::Stream;
     /// use screech::signal::Signal;
     /// use screech::clip::Clip;
     /// use screech::track::{Track, Destination};
     ///
     /// let buffer_size = 2;
-    /// let clip = Clip::new(Signal::Mono(Stream::from_points(&[0.1, 0.2])));
+    /// let clip = Box::new(Clip::from_points(&[0.1, 0.2]));
     ///
     /// let mut track = Track::new()
     ///     .set_source(Destination::In, clip)
@@ -68,14 +66,14 @@ impl<T: Sample> Track<T> {
     /// `-1.0` is left channel +6dB, right channel -114dB,
     /// `1.0` is left channel -114dB, right channel +6dB
     /// ```
-    /// use screech::traits::{Sample, Source};
-    /// use screech::stream::{Stream, FromPoints};
+    /// use screech::traits::{Sample, Source, FromPoints};
+    /// use screech::stream::Stream;
     /// use screech::signal::Signal;
     /// use screech::clip::Clip;
     /// use screech::track::{Track, Destination};
     ///
     /// let buffer_size = 2;
-    /// let clip = Clip::new(Signal::Mono(Stream::from_points(&[0.1, 0.2])));
+    /// let clip = Box::new(Clip::from_points(&[0.1, 0.2]));
     ///
     /// let mut track = Track::new()
     ///     .set_source(Destination::In, clip)
@@ -101,10 +99,10 @@ pub enum Destination {
     In,
 }
 
-impl<T: Sample> Source<T> for Track<T> {
+impl Source for Track {
     type Destination = Destination;
 
-    fn set_source(mut self, destination: Self::Destination, source: T) -> Self {
+    fn set_source(mut self, destination: Self::Destination, source: Box<dyn Sample>) -> Self {
         match destination {
             Destination::In => self.main_input = Some(source),
         }
@@ -123,7 +121,7 @@ fn panning_to_db(cv: Point) -> f32 {
     if cv > 0. { cv * 6. } else { cv * 114. }
 }
 
-impl<T: Sample> Sample for Track<T> {
+impl Sample for Track {
     fn sample(&mut self, buffer_size: usize) -> Signal {
         match self.main_input.as_mut() {
             Some(s) => {

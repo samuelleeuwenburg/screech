@@ -1,4 +1,4 @@
-//! A collection of helpers for handling audio
+//! A collection of helpers for handling audio data in real time
 //!
 //! **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
@@ -21,3 +21,6 @@ pub mod clip;
 
 /// Standard track with panning and volume control
 pub mod track;
+
+/// Primary sound output data structure
+pub mod primary;
