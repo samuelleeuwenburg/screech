@@ -18,3 +18,6 @@ pub mod signal;
 
 /// Most basic building block for non-generated sound
 pub mod clip;
+
+/// Standard track with panning and volume control
+pub mod track;

@@ -18,3 +18,15 @@ pub trait Sample {
     /// and return a [`Signal`] instance containing the resulting [`crate::stream::Stream`],
     fn sample(&mut self, buffer_size: usize) -> Signal;
 }
+
+/// Something that can source one or multiple signals
+///
+/// [`crate::track::Track`] as an example implements [`Source`]
+pub trait Source<T: Sample> {
+    /// type to define how to use the source, for example using an `Enum` type allows mulitple
+    /// sources to be set and overwritten to "internal destinations"
+    type Destination;
+
+    /// Set source to sample from, must implement [`Sample`]
+    fn set_source(self, destination: Self::Destination, source: T) -> Self;
+}

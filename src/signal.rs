@@ -38,64 +38,84 @@ impl Signal {
         }
     }
 
-    /// apply a manipulation to the underlying [`Stream`]
+    /// Transform inner [`Stream`]
     /// ```
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     /// 
-    /// let signal = Signal::silence(10).map(|stream| stream.get_looped_slice(0, 2));
+    /// let signal = Signal::silence(10).map(|stream| stream.looped_slice(0, 2));
     ///
     /// assert_eq!(
     ///     signal,
     ///     Signal::Mono(Stream { points: vec![0.0, 0.0] })
     /// );
     ///
-    /// let signal = Signal::silence(10).to_stereo().map(|stream| stream.get_looped_slice(0, 2));
+    /// let signal = Signal::silence(10).to_stereo().map(|stream| stream.looped_slice(0, 2));
     ///
     /// assert_eq!(
     ///     signal,
     ///     Signal::Stereo(Stream { points: vec![0.0, 0.0] }, Stream { points: vec![0.0, 0.0] })
     /// );
     /// ```
-    pub fn map<F>(&self, f: F) -> Self
-    where F: Fn(&Stream) -> Stream {
+    pub fn map<F>(self, f: F) -> Self
+    where F: Fn(Stream) -> Stream {
         match self {
             Signal::Mono(stream) => Signal::Mono(f(stream)),
             Signal::Stereo(left, right) => Signal::Stereo(f(left), f(right)),
         }
     }
 
-    /// apply a manipulation that can Err to the underlying [`Stream`]
+    /// Transform inner [`Stream`]s for left and right channels individually.
+    /// When given a mono channel it converts it to stereo by cloning left onto right
+    /// ```
+    /// use screech::signal::Signal;
+    /// use screech::stream::{Stream, FromPoints};
+    /// 
+    /// let signal = Signal::Mono(Stream::from_points(&[0.5, 0.5, 0.5]))
+    ///     .map_stereo(|left, right| (left.amplify(6.0), right.amplify(-6.0)));
+    ///
+    /// assert_eq!(
+    ///     signal,
+    ///     Signal::Stereo(
+    ///         Stream { points: vec![0.9976312, 0.9976312, 0.9976312] },
+    ///         Stream { points: vec![0.2505936, 0.2505936, 0.2505936] },
+    ///     )
+    /// );
+    /// ```
+    pub fn map_stereo<F>(self, f: F) -> Self
+    where F: Fn(Stream, Stream) -> (Stream, Stream) {
+	let (left, right) = match self {
+	    Signal::Mono(stream) => f(stream.clone(), stream),
+	    Signal::Stereo(left, right) => f(left, right),
+	};
+
+	Signal::Stereo(left, right)
+    }
+
+    /// Transform inner [`Stream`] that has the possibility to Err
     /// ```
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     /// 
-    /// let signal = Signal::silence(10).and_then(|stream| stream.get_slice(0, 2));
+    /// let signal = Signal::silence(10).and_then(|stream| stream.slice(0, 2));
     ///
     /// assert_eq!(
     ///     signal.unwrap(),
     ///     Signal::Mono(Stream { points: vec![0.0, 0.0] })
     /// );
     ///
-    /// let signal = Signal::silence(10).to_stereo().and_then(|stream| stream.get_slice(0, 2));
+    /// let signal = Signal::silence(10).to_stereo().and_then(|stream| stream.slice(0, 2));
     ///
     /// assert_eq!(
     ///     signal.unwrap(),
     ///     Signal::Stereo(Stream { points: vec![0.0, 0.0] }, Stream { points: vec![0.0, 0.0] })
     /// );
     /// ```
-    pub fn and_then<F>(&self, f: F) -> Result<Self, StreamErr>
-    where F: Fn(&Stream) -> Result<Stream, StreamErr>  {
+    pub fn and_then<F>(self, f: F) -> Result<Self, StreamErr>
+    where F: Fn(Stream) -> Result<Stream, StreamErr>  {
         match self {
-            Signal::Mono(stream) => {
-                let stream = f(stream)?;
-                Ok(Signal::Mono(stream))
-            }
-            Signal::Stereo(left, right) => {
-                let left = f(left)?;
-                let right = f(right)?;
-                Ok(Signal::Stereo(left, right))
-            }
+            Signal::Mono(stream) => Ok(Signal::Mono(f(stream)?)),
+            Signal::Stereo(left, right) => Ok(Signal::Stereo(f(left)?, f(right)?)),
         }
     }
 
@@ -117,17 +137,15 @@ impl Signal {
     ///     Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
     /// );
     ///
-    /// stereo_signal.mix(&[&mono_signal_a, &mono_signal_b]);
-    ///
     /// assert_eq!(
-    ///     stereo_signal,
+    ///     stereo_signal.mix(&[&mono_signal_a, &mono_signal_b]),
     ///     Signal::Stereo(
     ///         Stream { points: vec![0.1, 0.2, 0.4, 0.4] },
     ///         Stream { points: vec![0.2, 0.3, 0.5, 0.5] },
     ///     )
     /// )
     /// ```
-    pub fn mix(&mut self, signals: &[&Signal]) -> &mut Self {
+    pub fn mix(self, signals: &[&Signal]) -> Self {
 	let mut left = vec![];
 	let mut right = vec![];
 
@@ -151,16 +169,9 @@ impl Signal {
 	}
 
 	match self {
-	    Signal::Mono(stream) => {
-		stream.mix(&left);
-	    }
-	    Signal::Stereo(l, r) => {
-		l.mix(&left);
-		r.mix(&right);
-	    }
+	    Signal::Mono(stream) => Signal::Mono(stream.mix(&left)),
+	    Signal::Stereo(l, r) => Signal::Stereo(l.mix(&left), r.mix(&right)),
 	}
-
-	self
     }
 
     /// match channels for current Signal based on passed Signal
@@ -240,11 +251,7 @@ impl Signal {
     pub fn sum_to_mono(self) -> Self {
         match self {
             Signal::Mono(_) => self,
-            Signal::Stereo(left, right) => {
-                let mut stream = Stream::empty(left.len());
-                stream.mix(&[&left, &right]);
-                Signal::Mono(stream)
-            }
+            Signal::Stereo(left, right) => Signal::Mono(left.mix(&[&right]))
         }
     }
 

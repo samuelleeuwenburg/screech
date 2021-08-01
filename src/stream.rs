@@ -48,7 +48,7 @@ impl Stream {
     /// **note** the size of the stream is unchanged,
     /// if the other streams are shorter it inserts silence (0.0)
     /// if the other streams are longer the remaining points are ignored
-    pub fn mix(&mut self, streams: &[&Stream]) -> &mut Self {
+    pub fn mix(mut self, streams: &[&Stream]) -> Self {
         for (i, point) in self.points.iter_mut().enumerate() {
             *point = streams
                 .iter()
@@ -61,7 +61,7 @@ impl Stream {
     /// Amplify a stream by decibels
     ///
     /// **note** clamps values at -1.0 and 1.0
-    pub fn amplify(&mut self, db: f32) -> &mut Self {
+    pub fn amplify(mut self, db: f32) -> Self {
         let ratio = powf(10.0, db / 20.0);
 
         for point in self.points.iter_mut() {
@@ -72,7 +72,7 @@ impl Stream {
     }
 
     /// Returns a slice of the points into a new Stream
-    pub fn get_slice(&self, from: usize, length: usize) -> Result<Stream, StreamErr> {
+    pub fn slice(self, from: usize, length: usize) -> Result<Self, StreamErr> {
 	let to = from + length;
         let length = self.len();
 
@@ -84,7 +84,7 @@ impl Stream {
     }
 
     /// Returns a slice of the stream that loops around when going out of bounds
-    pub fn get_looped_slice(&self, from: usize, length: usize) -> Stream {
+    pub fn looped_slice(self, from: usize, length: usize) -> Self {
 	let stream_length = self.len();
 	let mut points = vec![];
 
@@ -165,14 +165,14 @@ mod tests {
     fn test_mix() {
         let points = [-1.0, -0.5, 0.0, 0.5, 1.0];
         let streams = vec![];
-        let mut stream = Stream::from_points(&points);
-        stream.mix(&streams);
+        let stream = Stream::from_points(&points).mix(&streams);
+
         assert_eq!(stream.points, vec![-1.0, -0.5, 0.0, 0.5, 1.0]);
 
         let points = [1.0, 0.2, 1.0, 1.0, 0.2];
         let streams = [&Stream::from_points(&[0.0, 0.0, 0.0, 0.0, 0.0])];
-        let mut stream = Stream::from_points(&points);
-        stream.mix(&streams);
+        let stream = Stream::from_points(&points).mix(&streams);
+
         assert_eq!(stream.points, vec![1.0, 0.2, 1.0, 1.0, 0.2]);
 
         let points = [0.1, 0.0, -0.1, -0.2, -0.3];
@@ -180,8 +180,8 @@ mod tests {
             &Stream::from_points(&[0.2, 0.1, 0.0, -0.1, -0.2]),
             &Stream::from_points(&[0.3, 0.2, 0.1, 0.0, -0.1]),
         ];
-        let mut stream = Stream::from_points(&points);
-        stream.mix(&streams);
+        let stream = Stream::from_points(&points).mix(&streams);
+
         assert_eq!(stream.points, vec![0.6, 0.3, 0.0, -0.3, -0.6]);
 
         let points = [0.1, 0.0, -0.1, -0.2, -0.3];
@@ -189,29 +189,31 @@ mod tests {
             &Stream::from_points(&[0.2, 0.1, 0.0]),
             &Stream::from_points(&[0.3]),
         ];
-        let mut stream = Stream::from_points(&points);
-        stream.mix(&streams);
+        let stream = Stream::from_points(&points).mix(&streams);
+
         assert_eq!(stream.points, vec![0.6, 0.1, -0.1, -0.2, -0.3]);
     }
 
     #[test]
     fn test_amplify() {
-        let mut stream = Stream::empty(1);
-        stream.amplify(6.0);
+        let stream = Stream::empty(1).amplify(6.0);
         assert_eq!(stream.points, vec![0.0]);
 
         // 6 dBs should roughly double / half
-        let mut stream = Stream::from_points(&[0.1, 0.25, 0.3, -0.1, -0.4]);
-        stream.amplify(6.0);
+        let stream = Stream::from_points(&[0.1, 0.25, 0.3, -0.1, -0.4])
+	    .amplify(6.0);
+
         let rounded_points: Vec<Point> = stream
             .points
             .iter()
             .map(|x| (x * 10.0).round() / 10.0)
             .collect::<Vec<Point>>();
+
         assert_eq!(rounded_points, vec![0.2, 0.5, 0.6, -0.2, -0.8]);
 
-        let mut stream = Stream::from_points(&[0.4, 0.5, 0.8, -0.3, -0.6]);
-        stream.amplify(-6.0);
+        let stream = Stream::from_points(&[0.4, 0.5, 0.8, -0.3, -0.6])
+	    .amplify(-6.0);
+	
         let rounded_points: Vec<Point> = stream
             .points
             .iter()
@@ -220,8 +222,9 @@ mod tests {
         assert_eq!(rounded_points, vec![0.2, 0.25, 0.4, -0.15, -0.3]);
 
         // clamp the value
-        let mut stream = Stream::from_points(&[0.1, 0.4, 0.6, -0.2, -0.3, -0.5]);
-        stream.amplify(12.0);
+        let stream = Stream::from_points(&[0.1, 0.4, 0.6, -0.2, -0.3, -0.5])
+	    .amplify(12.0);
+
         let rounded_points: Vec<Point> = stream
             .points
             .iter()
@@ -231,36 +234,36 @@ mod tests {
     }
 
     #[test]
-    fn test_get_slice() {
+    fn test_slice() {
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-        assert_eq!(stream.get_slice(0, 2).unwrap().points, vec![0.0, 0.1]);
+        assert_eq!(stream.slice(0, 2).unwrap().points, vec![0.0, 0.1]);
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-        assert_eq!(stream.get_slice(2, 3).unwrap().points, vec![0.2, 0.3, 0.4]);
+        assert_eq!(stream.slice(2, 3).unwrap().points, vec![0.2, 0.3, 0.4]);
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-	let error = stream.get_slice(7, 5);
+	let error = stream.slice(7, 5);
         assert_eq!(error, Err(StreamErr::SliceOutOfBounds));
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-	let error = stream.get_slice(2, 20);
+	let error = stream.slice(2, 20);
         assert_eq!(error, Err(StreamErr::SliceOutOfBounds));
     }
 
     #[test]
-    fn test_get_looped_slice() {
+    fn test_looped_slice() {
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-        assert_eq!(stream.get_looped_slice(2, 3).points, vec![0.2, 0.3, 0.4]);
+        assert_eq!(stream.looped_slice(2, 3).points, vec![0.2, 0.3, 0.4]);
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
         assert_eq!(
-	    stream.get_looped_slice(0, 8).points,
+	    stream.looped_slice(0, 8).points,
 	    vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.0, 0.1]
 	);
 
         let stream = Stream::from_points(&[0.0, 0.1]);
         assert_eq!(
-	    stream.get_looped_slice(1, 7).points,
+	    stream.looped_slice(1, 7).points,
 	    vec![0.1, 0.0, 0.1, 0.0, 0.1, 0.0, 0.1]
 	);
     }
