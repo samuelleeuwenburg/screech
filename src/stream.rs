@@ -1,8 +1,8 @@
-use alloc::vec;
 use crate::alloc::borrow::ToOwned;
+use crate::traits::FromPoints;
+use alloc::vec;
 use alloc::vec::Vec;
 use libm::powf;
-use crate::traits::FromPoints;
 
 /// Type alias representing audio data
 pub type Point = f32;
@@ -10,8 +10,6 @@ pub type Point = f32;
 /// Error type for different Stream failures
 #[derive(Debug, PartialEq, Clone)]
 pub enum StreamErr {
-    /// Tried to access index in stream that doesn not exist
-    NonExistentIndex(usize),
     /// Tried to create slice with out of bounds range
     SliceOutOfBounds,
 }
@@ -25,6 +23,15 @@ pub struct Stream {
 
 impl Stream {
     /// Create zero initialized (silent) stream
+    ///
+    /// ```
+    /// use screech::stream::Stream;
+    ///
+    /// assert_eq!(
+    ///     Stream::empty(4),
+    ///     Stream { points: vec![0.0, 0.0, 0.0, 0.0] },
+    /// )
+    /// ```
     pub fn empty(size: usize) -> Self {
         Stream {
             points: vec![0.0; size],
@@ -32,16 +39,29 @@ impl Stream {
     }
 
     /// Returns the length of the stream
+    ///
+    /// ```
+    /// use screech::stream::Stream;
+    ///
+    /// assert_eq!(Stream::empty(4).len(), 4);
+    /// ```
     pub fn len(&self) -> usize {
         self.points.len()
     }
 
     /// Get point for provided position argument, errors when the index does not exist in the stream
-    pub fn get_point(&self, position: usize) -> Result<Point, StreamErr> {
-        match self.points.get(position) {
-            Some(&f) => Ok(f),
-            None => Err(StreamErr::NonExistentIndex(position)),
-        }
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::stream::Stream;
+    ///
+    /// let stream = Stream::from_points(&[0.0, 0.1, 0.2]);
+    ///
+    /// assert_eq!(stream.get_point(1), Some(&0.1));
+    /// assert_eq!(stream.get_point(10), None);
+    /// ```
+    pub fn get_point(&self, position: usize) -> Option<&Point> {
+        self.points.get(position)
     }
 
     /// Mix multiple streams into the given stream
@@ -49,6 +69,19 @@ impl Stream {
     /// **note** the size of the stream is unchanged,
     /// if the other streams are shorter it inserts silence (0.0)
     /// if the other streams are longer the remaining points are ignored
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::stream::Stream;
+    ///
+    /// let streams = [
+    ///     &Stream::from_points(&[0.2, 0.1, 0.0]),
+    ///     &Stream::from_points(&[0.3]),
+    /// ];
+    /// let stream = Stream::from_points(&[0.1, 0.0, -0.1, -0.2, -0.3]).mix(&streams);
+    ///
+    /// assert_eq!(stream.points, vec![0.6, 0.1, -0.1, -0.2, -0.3]);
+    /// ```
     pub fn mix(mut self, streams: &[&Stream]) -> Self {
         for (i, point) in self.points.iter_mut().enumerate() {
             *point = streams
@@ -62,6 +95,16 @@ impl Stream {
     /// Amplify a stream by decibels
     ///
     /// **note** clamps values at -1.0 and 1.0
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::stream::Stream;
+    ///
+    /// // 6 dBs should roughly double / half
+    /// let stream = Stream::from_points(&[0.1, 0.3, 0.6, -0.1, -0.4, -0.8]).amplify(6.0);
+    ///
+    /// assert_eq!(stream.points, vec![0.19952624, 0.59857875, 1.0, -0.19952624, -0.79810494, -1.0]);
+    /// ```
     pub fn amplify(mut self, db: f32) -> Self {
         let ratio = powf(10.0, db / 20.0);
 
@@ -73,8 +116,19 @@ impl Stream {
     }
 
     /// Returns a slice of the points into a new Stream
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::stream::Stream;
+    ///
+    /// let stream = Stream::from_points(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+    ///     .slice(2, 3)
+    ///     .unwrap();
+    ///
+    /// assert_eq!(stream.points, vec![0.3, 0.4, 0.5]);
+    /// ```
     pub fn slice(self, from: usize, length: usize) -> Result<Self, StreamErr> {
-	let to = from + length;
+        let to = from + length;
         let length = self.len();
 
         if from > length || to > length || from > to {
@@ -85,16 +139,26 @@ impl Stream {
     }
 
     /// Returns a slice of the stream that loops around when going out of bounds
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::stream::Stream;
+    ///
+    /// let stream = Stream::from_points(&[0.1, 0.2, 0.3])
+    ///     .looped_slice(0, 8);
+    ///
+    /// assert_eq!(stream.points, vec![0.1, 0.2, 0.3, 0.1, 0.2, 0.3, 0.1, 0.2]);
+    /// ```
     pub fn looped_slice(self, from: usize, length: usize) -> Self {
-	let stream_length = self.len();
-	let mut points = vec![];
+        let stream_length = self.len();
+        let mut points = vec![];
 
-	for index in 0..length {
-	    let pos = (index + from) % stream_length;
-	    points.push(self.get_point(pos).unwrap());
-	}
+        for index in 0..length {
+            let pos = (index + from) % stream_length;
+            points.push(self.get_point(pos).unwrap().clone());
+        }
 
-	Stream::from_points(&points)
+        Stream::from_points(&points)
     }
 }
 
@@ -132,7 +196,9 @@ impl FromPoints<f32, Stream> for Stream {
     /// Create new stream based on f32 points
     fn from_points(points: &[f32]) -> Stream {
         // @TODO: clamp values?
-        Stream { points: points.to_owned() }
+        Stream {
+            points: points.to_owned(),
+        }
     }
 }
 
@@ -195,8 +261,7 @@ mod tests {
         assert_eq!(stream.points, vec![0.0]);
 
         // 6 dBs should roughly double / half
-        let stream = Stream::from_points(&[0.1, 0.25, 0.3, -0.1, -0.4])
-	    .amplify(6.0);
+        let stream = Stream::from_points(&[0.1, 0.25, 0.3, -0.1, -0.4]).amplify(6.0);
 
         let rounded_points: Vec<Point> = stream
             .points
@@ -206,9 +271,8 @@ mod tests {
 
         assert_eq!(rounded_points, vec![0.2, 0.5, 0.6, -0.2, -0.8]);
 
-        let stream = Stream::from_points(&[0.4, 0.5, 0.8, -0.3, -0.6])
-	    .amplify(-6.0);
-	
+        let stream = Stream::from_points(&[0.4, 0.5, 0.8, -0.3, -0.6]).amplify(-6.0);
+
         let rounded_points: Vec<Point> = stream
             .points
             .iter()
@@ -217,8 +281,7 @@ mod tests {
         assert_eq!(rounded_points, vec![0.2, 0.25, 0.4, -0.15, -0.3]);
 
         // clamp the value
-        let stream = Stream::from_points(&[0.1, 0.4, 0.6, -0.2, -0.3, -0.5])
-	    .amplify(12.0);
+        let stream = Stream::from_points(&[0.1, 0.4, 0.6, -0.2, -0.3, -0.5]).amplify(12.0);
 
         let rounded_points: Vec<Point> = stream
             .points
@@ -237,11 +300,11 @@ mod tests {
         assert_eq!(stream.slice(2, 3).unwrap().points, vec![0.2, 0.3, 0.4]);
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-	let error = stream.slice(7, 5);
+        let error = stream.slice(7, 5);
         assert_eq!(error, Err(StreamErr::SliceOutOfBounds));
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
-	let error = stream.slice(2, 20);
+        let error = stream.slice(2, 20);
         assert_eq!(error, Err(StreamErr::SliceOutOfBounds));
     }
 
@@ -252,15 +315,15 @@ mod tests {
 
         let stream = Stream::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5]);
         assert_eq!(
-	    stream.looped_slice(0, 8).points,
-	    vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.0, 0.1]
-	);
+            stream.looped_slice(0, 8).points,
+            vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.0, 0.1]
+        );
 
         let stream = Stream::from_points(&[0.0, 0.1]);
         assert_eq!(
-	    stream.looped_slice(1, 7).points,
-	    vec![0.1, 0.0, 0.1, 0.0, 0.1, 0.0, 0.1]
-	);
+            stream.looped_slice(1, 7).points,
+            vec![0.1, 0.0, 0.1, 0.0, 0.1, 0.0, 0.1]
+        );
     }
 
     #[test]
@@ -304,8 +367,7 @@ mod tests {
 
     #[test]
     fn test_from_i32() {
-        let stream =
-            Stream::from_points(&[i32::MIN, -1_147_483_647, 0, 1_147_483_647, i32::MAX]);
+        let stream = Stream::from_points(&[i32::MIN, -1_147_483_647, 0, 1_147_483_647, i32::MAX]);
         assert_eq!(stream.points, vec![-1.0, -0.5343387, 0.0, 0.5343387, 1.0]);
     }
 }

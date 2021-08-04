@@ -1,6 +1,6 @@
-use crate::stream::Stream;
 use crate::signal::Signal;
-use crate::traits::{Sample, FromPoints};
+use crate::stream::Stream;
+use crate::traits::{FromPoints, Sample};
 use core::cmp;
 
 /// Most basic building block for non-generated sound
@@ -38,7 +38,7 @@ impl Clip {
             audio,
             speed: 1.0,
             position: 0,
-            play_style: PlayStyle::Loop,
+            play_style: PlayStyle::OneShot,
         }
     }
 
@@ -51,19 +51,20 @@ impl Clip {
                 let signal_size = cmp::min(clip_length, self.position + buffer_size);
 
                 self.audio
-		    .clone()
+                    .clone()
                     .and_then(|stream| stream.slice(self.position, signal_size))
                     .map_err(|_| ClipErr::SampleFailure)?
             }
-            PlayStyle::Loop => self.audio
-		.clone()
+            PlayStyle::Loop => self
+                .audio
+                .clone()
                 .map(|stream| stream.looped_slice(self.position, buffer_size)),
         };
 
         // mix audio in signal
         let signal = Signal::silence(buffer_size)
-	    .match_channels(&self.audio)
-	    .mix(&[&audio_signal]);
+            .match_channels(&self.audio)
+            .mix(&[&audio_signal]);
 
         // determine next position based on play style
         self.position = match self.play_style {
@@ -87,13 +88,14 @@ impl Sample for Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::FromPoints;
     use crate::stream::Stream;
+    use crate::traits::FromPoints;
     use alloc::vec;
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
         let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+        clip.play_style = PlayStyle::Loop;
         let buffer_size = 5;
 
         assert_eq!(
@@ -121,6 +123,7 @@ mod tests {
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
         let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]);
+        clip.play_style = PlayStyle::Loop;
         let buffer_size = 8;
 
         assert_eq!(
@@ -141,7 +144,6 @@ mod tests {
     fn test_play_oneshot() {
         let buffer_size = 8;
         let mut clip = Clip::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]);
-
         clip.play_style = PlayStyle::OneShot;
 
         assert_eq!(
@@ -162,24 +164,24 @@ mod tests {
 
 impl FromPoints<f32, Clip> for Clip {
     fn from_points(points: &[f32]) -> Clip {
-	Clip::new(Signal::Mono(Stream::from_points(points)))
+        Clip::new(Signal::Mono(Stream::from_points(points)))
     }
 }
 
 impl FromPoints<i32, Clip> for Clip {
     fn from_points(points: &[i32]) -> Clip {
-	Clip::new(Signal::Mono(Stream::from_points(points)))
+        Clip::new(Signal::Mono(Stream::from_points(points)))
     }
 }
 
 impl FromPoints<i16, Clip> for Clip {
     fn from_points(points: &[i16]) -> Clip {
-	Clip::new(Signal::Mono(Stream::from_points(points)))
+        Clip::new(Signal::Mono(Stream::from_points(points)))
     }
 }
 
 impl FromPoints<u8, Clip> for Clip {
     fn from_points(points: &[u8]) -> Clip {
-	Clip::new(Signal::Mono(Stream::from_points(points)))
+        Clip::new(Signal::Mono(Stream::from_points(points)))
     }
 }

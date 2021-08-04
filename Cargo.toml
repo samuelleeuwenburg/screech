@@ -1,6 +1,6 @@
 [package]
 name = "screech"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Samuel Leeuwenburg <samleeuwenburg@gmail.com>"]
 edition = "2018"
 description = "A collection of helpers for handling audio data in real time"
