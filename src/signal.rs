@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 /// and be able to produce a Signal
 #[derive(Debug, PartialEq, Clone)]
 pub enum Signal {
+    // Fixed unmoving signal, mainly used for 
+   //  Fixed(
     /// Mono signal containing one stream
     Mono(Stream),
     /// Stereo signal containing two streams, left and right respectively
@@ -140,56 +142,58 @@ impl Signal {
         }
     }
 
-    /// Mix other signals into current signal respecting channels using [`Stream::mix`]
+    /// Mix signals together into a new stereo signal
     ///
     /// ```
     /// use screech::traits::FromPoints;
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     ///
-    /// let mono_signal_a = Signal::from_points(&[0.1, 0.0, 0.1]);
-    /// let mono_signal_b = Signal::from_points(&[0.0, 0.1, 0.1, 0.1]);
-    ///
-    /// let mut stereo_signal = Signal::Stereo(
-    ///     Stream::from_points(&[0.0, 0.1, 0.2, 0.3]),
-    ///     Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
-    /// );
+    /// let signals = vec![
+    ///     Signal::from_points(&[0.1, 0.0, 0.1]),
+    ///     Signal::from_points(&[0.0, 0.1, 0.1, 0.1])
+    ///     Signal::Stereo(
+    ///         Stream::from_points(&[0.0, 0.1, 0.2, 0.3]),
+    ///         Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
+    ///     )
+    /// ];
     ///
     /// assert_eq!(
-    ///     stereo_signal.mix(&[&mono_signal_a, &mono_signal_b]),
+    ///     Signal::mix(&signals),
     ///     Signal::Stereo(
     ///         Stream { points: vec![0.1, 0.2, 0.4, 0.4] },
     ///         Stream { points: vec![0.2, 0.3, 0.5, 0.5] },
     ///     )
     /// )
     /// ```
-    pub fn mix(self, signals: &[&Signal]) -> Self {
-        let mut left = vec![];
-        let mut right = vec![];
-
-        for signal in signals {
-            match (&self, signal) {
-                (Signal::Mono(_), Signal::Mono(stream)) => {
-                    left.push(stream);
-                }
-                (Signal::Mono(_), Signal::Stereo(l, _r)) => {
-                    left.push(l);
-                }
-                (Signal::Stereo(_, _), Signal::Mono(stream)) => {
-                    left.push(stream);
-                    right.push(stream);
-                }
-                (Signal::Stereo(_, _), Signal::Stereo(l, r)) => {
-                    left.push(l);
-                    right.push(r);
-                }
-            }
-        }
-
-        match self {
-            Signal::Mono(stream) => Signal::Mono(stream.mix(&left)),
-            Signal::Stereo(l, r) => Signal::Stereo(l.mix(&left), r.mix(&right)),
-        }
+    pub fn mix(signals: &[&Signal]) -> Self {
+	signals
+	    .iter()
+	    .fold(Signal::silence(0), |sum, signal| {
+		match (sum, signal) {
+		    (Signal::Mono(a), Signal::Mono(b)) => {
+			Signal::Mono(Stream::mix(&[&a, b]))
+		    }
+		    (Signal::Mono(a), Signal::Stereo(left, right)) => {
+			Signal::Stereo(
+			    Stream::mix(&[&a, left]),
+			    Stream::mix(&[&a, right]),
+			)
+		    }
+		    (Signal::Stereo(left, right), Signal::Mono(b)) => {
+			Signal::Stereo(
+			    Stream::mix(&[b, &left]),
+			    Stream::mix(&[b, &right]),
+			)
+		    }
+		    (Signal::Stereo(left_a, right_a), Signal::Stereo(left_b, right_b)) => {
+			Signal::Stereo(
+			    Stream::mix(&[&left_a, left_b]),
+			    Stream::mix(&[&right_a, right_b]),
+			)
+		    }
+		}
+	    })
     }
 
     /// match channels for current Signal based on passed Signal
@@ -273,7 +277,7 @@ impl Signal {
     pub fn sum_to_mono(self) -> Self {
         match self {
             Signal::Mono(_) => self,
-            Signal::Stereo(left, right) => Signal::Mono(left.mix(&[&right])),
+            Signal::Stereo(left, right) => Signal::Mono(Stream::mix(&[&left, &right])),
         }
     }
 
@@ -347,7 +351,7 @@ impl Signal {
     /// ```
     pub fn get_interleaved_points(&self) -> Result<Vec<f32>, SignalErr> {
         match self {
-            Signal::Mono(Stream { points }) => Ok(points.clone()),
+            Signal::Mono(stream) => Ok(stream.get_points()),
             Signal::Stereo(left, right) => {
                 let mut result: Vec<f32> = vec![];
 

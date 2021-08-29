@@ -11,3 +11,4 @@ keywords = ["audio", "no_std"]
 
 [dependencies]
 libm = "0.2.1"
+hashbrown = "0.11"
