@@ -7,6 +7,8 @@
 
 extern crate alloc;
 
+mod graph;
+
 /// Common traits used throughout the library
 pub mod traits;
 

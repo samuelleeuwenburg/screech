@@ -13,10 +13,10 @@ use alloc::vec::Vec;
 /// silence instead
 ///
 ///
-/// [`crate::clip::Clip`] as an example implements [`Source`] 
+/// [`crate::clip::Clip`] as an example implements [`Source`]
 /// [`crate::track::Track`] as an example implements [`Source`]
 pub trait Source {
-    /// type to define how to use the source, for example using an `Enum` type allows mulitple
+    /// type to define how to use the source, for example using an `Enum` type allows multiple
     /// sources to be set and overwritten to "internal destinations"
 
     /// move one buffersize forward in discrete time
