@@ -1,113 +1,151 @@
-use alloc::boxed::Box;
-use crate::traits::{Sample, Source};
-use crate::stream::Point;
 use crate::signal::Signal;
+use crate::stream::Point;
+use crate::stream::Stream;
+use crate::traits::Source;
+use alloc::vec;
+use alloc::vec::Vec;
+use hashbrown::HashMap;
+
+#[derive(Debug, PartialEq, Clone)]
+enum ModSource {
+    Owned(Signal),
+    External(usize),
+}
 
 /// Standard track with panning and volume control
+#[derive(Debug, PartialEq, Clone)]
 pub struct Track {
-    /// Main input to used for the output of the track
-    pub main_input: Option<Box<dyn Sample>>,
+    id: usize,
+    /// Inputs used for the main output of the track
+    inputs: Vec<usize>,
     /// Gain setting, -1.0 to 1.0 for -114dB and +6dB respectively
-    pub gain: Point,
+    gain: ModSource,
     /// Panning setting, -1.0 to 1.0 for -114dB and +6dB respectively
     /// inverted to each channel
-    pub panning: Point,
+    panning: ModSource,
 }
 
 impl Track {
-    /// Create new track with no source attached to the `Destination::In`
-    /// ```
-    /// use screech::track::Track;
-    /// use screech::clip::Clip;
-    ///
-    /// let track = Track::new();
-    ///
-    /// assert_eq!(track.gain, 0.9);
-    /// assert_eq!(track.panning, 0.0);
-    /// ```
-    pub fn new() -> Track {
-        Track { main_input: None, gain: 0.9, panning: 0. }
+    /// Create a new track with a unique `id`
+    pub fn new(id: usize) -> Track {
+        Track {
+            id,
+            inputs: vec![],
+            gain: ModSource::Owned(Signal::fixed(0.9)),
+            panning: ModSource::Owned(Signal::fixed(0.0)),
+        }
     }
 
-    /// Set gain between `1.0` and `-1.0`
+    /// add source to the input, supports multiple inputs
+    pub fn add_input(&mut self, source: &dyn Source) -> &mut Self {
+        self.inputs.push(source.get_id());
+        self
+    }
+
+    /// remove source from input
+    pub fn remove_input(&mut self, source: &dyn Source) -> &mut Self {
+        let a = source.get_id();
+        self.inputs.retain(|&b| a != b);
+        self
+    }
+
+    /// Set gain between `1.0` and `-1.0` by signal source
     ///
     /// `0.9` is set to unity gain, for `0.1` increment the level increases by 6dB.
     /// For example setting a gain of `1.0` gives +6dB of amplification
     /// and setting a gain of `-1.0` would result in -114dB
-    /// ```
-    /// use screech::traits::{Sample, Source, FromPoints};
-    /// use screech::stream::Stream;
-    /// use screech::signal::Signal;
-    /// use screech::clip::Clip;
-    /// use screech::track::{Track, Destination};
     ///
-    /// let buffer_size = 2;
-    /// let clip = Box::new(Clip::from_points(&[0.1, 0.2]));
-    ///
-    /// let mut track = Track::new()
-    ///     .set_source(Destination::In, clip)
-    ///     .gain(1.0);
-    ///
-    /// assert_eq!(
-    ///     track.sample(buffer_size),
-    ///     Signal::Stereo(
-    ///         Stream { points: vec![0.19952624, 0.39905247]  },
-    ///         Stream { points: vec![0.19952624, 0.39905247]  },
-    ///     )
-    /// )
-    /// ```
-    pub fn gain(mut self, gain: Point) -> Self {
-	self.gain = gain;
-	self
+    pub fn set_gain(&mut self, cv: Signal) -> &mut Self {
+        self.gain = ModSource::Owned(cv);
+        self
     }
 
-    /// Set left and right channel panning,
+    /// Set gain between `1.0` and `-1.0` by external source
+    ///
+    /// `0.9` is set to unity gain, for `0.1` increment the level increases by 6dB.
+    /// For example setting a gain of `1.0` gives +6dB of amplification
+    /// and setting a gain of `-1.0` would result in -114dB
+    ///
+    pub fn set_external_gain(&mut self, source: &dyn Source) -> &mut Self {
+        self.gain = ModSource::External(source.get_id());
+        self
+    }
+
+    /// Set left and right channel panning by signal source
+    ///
     /// `0.0` is center resulting in no amplification,
     /// `-1.0` is left channel +6dB, right channel -114dB,
     /// `1.0` is left channel -114dB, right channel +6dB
-    /// ```
-    /// use screech::traits::{Sample, Source, FromPoints};
-    /// use screech::stream::Stream;
-    /// use screech::signal::Signal;
-    /// use screech::clip::Clip;
-    /// use screech::track::{Track, Destination};
     ///
-    /// let buffer_size = 2;
-    /// let clip = Box::new(Clip::from_points(&[0.1, 0.2]));
+    pub fn set_panning(&mut self, cv: Signal) -> &mut Self {
+        self.panning = ModSource::Owned(cv);
+        self
+    }
+
+    /// Set left and right channel panning by external source id
     ///
-    /// let mut track = Track::new()
-    ///     .set_source(Destination::In, clip)
-    ///     .panning(0.5);
+    /// `0.0` is center resulting in no amplification,
+    /// `-1.0` is left channel +6dB, right channel -114dB,
+    /// `1.0` is left channel -114dB, right channel +6dB
     ///
-    /// assert_eq!(
-    ///     track.sample(buffer_size),
-    ///     Signal::Stereo(
-    ///         Stream { points: vec![0.14125375, 0.2825075]  },
-    ///         Stream { points: vec![0.0001412538, 0.0002825076] },
-    ///     )
-    /// )
-    /// ```
-    pub fn panning(mut self, panning: Point) -> Self {
-	self.panning = panning;
-	self
+    pub fn set_external_panning(&mut self, source: &dyn Source) -> &mut Self {
+        self.panning = ModSource::External(source.get_id());
+        self
     }
 }
 
-/// Enum for [`Track`] input destinations
-pub enum Destination {
-    /// Main input, will be converted to [`Signal::Stereo`] for panning
-    In,
-}
-
 impl Source for Track {
-    type Destination = Destination;
+    fn sample(&mut self, sources: Vec<(usize, &Signal)>, _buffer_size: usize) -> Signal {
+        let mut map = HashMap::new();
 
-    fn set_source(mut self, destination: Self::Destination, source: Box<dyn Sample>) -> Self {
-        match destination {
-            Destination::In => self.main_input = Some(source),
+        for (key, signal) in sources {
+            map.insert(key, signal);
         }
 
-	self
+        let gain_stream = match &self.gain {
+            ModSource::Owned(signal) => signal.clone().get_stream(),
+            ModSource::External(key) => map
+                .get(&key)
+                .map(|&s| s.clone().get_stream())
+                .unwrap_or(Stream::fixed(0.9)),
+        };
+
+        let panning_stream = match &self.panning {
+            ModSource::Owned(signal) => signal.clone().get_stream(),
+            ModSource::External(key) => map
+                .get(&key)
+                .map(|&s| s.clone().get_stream())
+                .unwrap_or(Stream::fixed(0.0)),
+        };
+
+        let sources: Vec<Signal> = self
+            .inputs
+            .iter()
+            .filter_map(|k| map.get(k))
+            .map(|&signal| {
+                signal
+                    .clone()
+                    .map(|s| s.amplify_with_cv(&gain_stream, |p| cv_to_db(p)))
+                    .map_stereo(|left, right| {
+                        (
+                            left.amplify_with_cv(&panning_stream, |p| panning_to_db(p)),
+                            right.amplify_with_cv(&panning_stream, |p| panning_to_db(-p)),
+                        )
+                    })
+            })
+            .collect();
+
+        let refs: Vec<&Signal> = sources.iter().collect();
+
+        Signal::mix(&refs)
+    }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
+
+    fn get_sources(&self) -> Vec<usize> {
+        self.inputs.clone()
     }
 }
 
@@ -118,42 +156,55 @@ fn cv_to_db(cv: Point) -> f32 {
 
 // non linear conversion of -1.0 .. 1.0 range to -114dB .. +6dB
 fn panning_to_db(cv: Point) -> f32 {
-    if cv > 0. { cv * 6. } else { cv * 114. }
-}
-
-impl Sample for Track {
-    fn sample(&mut self, buffer_size: usize) -> Signal {
-        match self.main_input.as_mut() {
-            Some(s) => {
-		s.sample(buffer_size)
-		    .map(|s| s.amplify(cv_to_db(self.gain)))
-		    .map_stereo(|left, right| (
-			left.amplify(panning_to_db(self.panning)),
-			right.amplify(panning_to_db(-self.panning)),
-		    ))
-	    }
-            None => Signal::silence(buffer_size),
-        }
+    if cv > 0. {
+        cv * 6.
+    } else {
+        cv * 114.
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clip::Clip;
+    use crate::signal::Signal;
+    use crate::stream::Stream;
+    use crate::traits::{FromPoints, Source};
 
     #[test]
     fn test_cv_to_db() {
-	assert_eq!(cv_to_db(1.0), 6.0);
-	assert_eq!(cv_to_db(0.9), 0.0);
-	assert_eq!(cv_to_db(-1.0), -114.0);
+        assert_eq!(cv_to_db(1.0), 6.0);
+        assert_eq!(cv_to_db(0.9), 0.0);
+        assert_eq!(cv_to_db(-1.0), -114.0);
     }
 
     #[test]
     fn test_panning_to_db() {
-	assert_eq!(panning_to_db(1.0), 6.0);
-	assert_eq!(panning_to_db(0.5), 3.0);
-	assert_eq!(panning_to_db(0.0), 0.0);
-	assert_eq!(panning_to_db(-0.5), -57.0);
-	assert_eq!(panning_to_db(-1.0), -114.0);
+        assert_eq!(panning_to_db(1.0), 6.0);
+        assert_eq!(panning_to_db(0.5), 3.0);
+        assert_eq!(panning_to_db(0.0), 0.0);
+        assert_eq!(panning_to_db(-0.5), -57.0);
+        assert_eq!(panning_to_db(-1.0), -114.0);
+    }
+
+    #[test]
+    fn test_panning() {
+        let buffer_size = 2;
+
+        let mut clip = Clip::new(0, Signal::from_points(&[0.1, 0.2, 0.3, 0.4]));
+        let mut track = Track::new(1);
+
+        track.add_input(&clip);
+
+        let clip_signal = clip.sample(vec![], buffer_size);
+        let sources = vec![(clip.get_id(), &clip_signal)];
+
+        assert_eq!(
+            track.sample(sources, buffer_size),
+            Signal::Stereo(
+                Stream::Points(vec![0.1, 0.2]),
+                Stream::Points(vec![0.1, 0.2]),
+            )
+        );
     }
 }
