@@ -91,7 +91,7 @@ impl Source for Clip {
         self.id
     }
 
-    fn get_sources(&self) -> Vec<&usize> {
+    fn get_sources(&self) -> Vec<usize> {
         vec![]
     }
 }

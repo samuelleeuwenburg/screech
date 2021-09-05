@@ -20,12 +20,8 @@ fn visit(
     node: usize,
 ) -> Result<(), Error> {
     match marks.get(&node) {
-        Some(Mark::Permanent) => {
-            Ok(())
-        }
-        Some(Mark::Temporary) => {
-            Err(Error::NoDirectedAcyclicGraph)
-        }
+        Some(Mark::Permanent) => Ok(()),
+        Some(Mark::Temporary) => Err(Error::NoDirectedAcyclicGraph),
         None => {
             marks.insert(node, Mark::Temporary);
             match nodes.get(&node) {
@@ -83,9 +79,6 @@ mod tests {
         graph.insert(3, vec![1, 4]);
         graph.insert(4, vec![2]);
 
-        assert_eq!(
-	    topological_sort(graph),
-            Err(Error::NoDirectedAcyclicGraph)
-	);
+        assert_eq!(topological_sort(graph), Err(Error::NoDirectedAcyclicGraph));
     }
 }

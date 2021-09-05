@@ -144,8 +144,8 @@ impl Source for Track {
         self.id
     }
 
-    fn get_sources(&self) -> Vec<&usize> {
-        self.inputs.iter().collect()
+    fn get_sources(&self) -> Vec<usize> {
+        self.inputs.clone()
     }
 }
 

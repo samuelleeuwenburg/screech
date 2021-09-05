@@ -26,7 +26,7 @@ pub trait Source {
     fn get_id(&self) -> usize;
 
     /// Get a list of sources
-    fn get_sources(&self) -> Vec<&usize>;
+    fn get_sources(&self) -> Vec<usize>;
 }
 
 /// Trait to implement conversion from a slice of sized types to a generic

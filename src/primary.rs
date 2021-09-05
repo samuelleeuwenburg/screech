@@ -1,17 +1,10 @@
-use crate::graph::topological_sort;
+use crate::graph::{topological_sort, Error as GraphError};
 use crate::signal::Signal;
 use crate::stream::Point;
 use crate::traits::Source;
 use alloc::vec;
 use alloc::vec::Vec;
-use hashbrown::{HashMap, HashSet};
-
-#[derive(Debug, PartialEq)]
-pub enum Error {
-    DependenciesNotFound(Vec<usize>),
-    CyclicDependencies,
-    UnableToBuildFinalStream,
-}
+use hashbrown::HashMap;
 
 /// ```
 /// use screech::primary::Primary;
@@ -51,6 +44,24 @@ pub struct Primary {
     monitored_sources: Vec<usize>,
 }
 
+/// Error type for failure to execute [`Primary::sample`]
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    /// Dependency graph contains a cyclic dependency.
+    ///
+    /// for example, track A -> track B -> track A
+    CyclicDependencies,
+    /// A monitor has been set using [`Primary::add_monitor`]
+    /// which is missing from the sources list
+    MissingMonitor,
+    /// A source has a dependency in its [`crate::traits::Source::get_sources`] 
+    /// which is missing from the sources list
+    MissingDependency,
+    /// Unable to build final stereo stream
+    /// see [`crate::signal::Signal::get_interleaved_points`] for more information
+    UnableToBuildFinalStream,
+}
+
 impl Primary {
     /// Create new Primary "channel"
     pub fn new(buffer_size: usize) -> Self {
@@ -75,71 +86,44 @@ impl Primary {
 
     /// attempt to sample sources into a single output
     pub fn sample(&self, unmapped_sources: Vec<&mut dyn Source>) -> Result<Vec<Point>, Error> {
-        // create hashmap based on ids
         let mut sources = HashMap::<usize, &mut dyn Source>::new();
         let mut signals = HashMap::<usize, Signal>::new();
-        let mut dependencies = HashSet::new();
+        let mut graph = HashMap::<usize, Vec<usize>>::new();
 
         for source in unmapped_sources {
-            // keep track of dependencies
-            for &key in source.get_sources() {
-                dependencies.insert(key);
-            }
+            graph.insert(source.get_id(), source.get_sources());
             sources.insert(source.get_id(), source);
         }
 
-        // check if any dependencies are missing
-        let missing_dependencies: Vec<usize> = dependencies
-            .iter()
-            .filter(|k| !sources.contains_key(k))
-            .map(|&k| k)
-            .collect();
+        let mut sorted = topological_sort(graph).map_err(|e| match e {
+            GraphError::NoDirectedAcyclicGraph => Error::CyclicDependencies,
+        })?;
 
-        if missing_dependencies.len() > 0 {
-            return Err(Error::DependenciesNotFound(missing_dependencies));
-        }
+        // reverse the dependency graph
+        sorted.reverse();
 
-        // loop while rendering dependencies into new hashmap of signals
-        for _ in 0..dependencies.len() {
-            if signals.len() == sources.len() {
-                break;
-            }
+        for key in sorted {
+            // build signals
+            let source = sources.get_mut(&key).ok_or(Error::MissingDependency)?;
+            let dependencies: Vec<(usize, &Signal)> = source
+                .get_sources()
+                .iter()
+                .filter_map(|&key| signals.get(&key).map(|s| (key, s)))
+                .collect();
 
-            for (&key, source) in sources.iter_mut() {
-                // skip if the signal has already been rendered
-                if signals.contains_key(&key) {
-                    continue;
-                }
-
-                // render only if all dependencies are available
-                let dependencies_are_ready = source
-                    .get_sources()
-                    .iter()
-                    .fold(true, |a, b| a && signals.contains_key(b));
-
-                if dependencies_are_ready {
-                    let dependencies: Vec<(usize, &Signal)> = source
-                        .get_sources()
-                        .iter()
-                        .filter_map(|&key| signals.get(key).map(|s| (*key, s)))
-                        .collect();
-
-                    let signal = source.sample(dependencies, self.buffer_size);
-                    signals.insert(key, signal);
-                }
-            }
+            let signal = source.sample(dependencies, self.buffer_size);
+            signals.insert(key, signal);
         }
 
         // mix result based on monitored sources
-        let sources: Vec<&Signal> = self
-            .monitored_sources
-            .iter()
-            .filter_map(|key| signals.get(key))
-            .collect();
+        let mut monitored_signals = vec![];
 
-        let buffer = Signal::mix(&sources);
+        for key in &self.monitored_sources {
+            let s = signals.get(&key).ok_or(Error::MissingMonitor)?;
+            monitored_signals.push(s);
+        }
 
-        buffer
+        Signal::mix(&monitored_signals)
             .get_interleaved_points()
             .map_err(|_| Error::UnableToBuildFinalStream)
     }
@@ -216,15 +200,10 @@ mod tests {
 
         primary.add_monitor(&track);
 
-        match primary.sample(vec![&mut clip_a, &mut track]) {
-            Err(Error::DependenciesNotFound(missing)) => {
-                assert_eq!(missing[0] == 1 || missing[0] == 2, true);
-                assert_eq!(missing[1] == 1 || missing[1] == 2, true);
-            }
-            _ => panic!(
-                "dependencies are missing! the Error::DependenciesNotFound(_) should be returned."
-            ),
-        }
+        assert_eq!(
+            primary.sample(vec![&mut clip_a, &mut track]),
+            Err(Error::MissingDependency),
+        )
     }
 
     #[test]
