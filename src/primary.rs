@@ -1,7 +1,7 @@
 use crate::graph::{topological_sort, Error as GraphError};
 use crate::signal::Signal;
 use crate::stream::Point;
-use crate::traits::Source;
+use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
@@ -14,11 +14,12 @@ use hashbrown::HashMap;
 /// use screech::traits::{FromPoints, Source};
 ///
 /// let buffer_size = 2;
+/// let sample_rate = 48_000;
 ///
-/// let mut primary = Primary::new(buffer_size);
-/// let mut clip_a = Clip::new(0, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
-/// let mut clip_b = Clip::new(1, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
-/// let mut track = Track::new(2);
+/// let mut primary = Primary::new(buffer_size, sample_rate);
+/// let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
+/// let mut clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
+/// let mut track = Track::new(&mut primary);
 ///
 /// track.add_input(&clip_a);
 /// track.add_input(&clip_b);
@@ -41,7 +42,9 @@ use hashbrown::HashMap;
 /// ```
 pub struct Primary {
     buffer_size: usize,
+    sample_rate: usize,
     monitored_sources: Vec<usize>,
+    id_position: usize,
 }
 
 /// Error type for failure to execute [`Primary::sample`]
@@ -54,7 +57,7 @@ pub enum Error {
     /// A monitor has been set using [`Primary::add_monitor`]
     /// which is missing from the sources list
     MissingMonitor,
-    /// A source has a dependency in its [`crate::traits::Source::get_sources`] 
+    /// A source has a dependency in its [`crate::traits::Source::get_sources`]
     /// which is missing from the sources list
     MissingDependency,
     /// Unable to build final stereo stream
@@ -64,10 +67,12 @@ pub enum Error {
 
 impl Primary {
     /// Create new Primary "channel"
-    pub fn new(buffer_size: usize) -> Self {
+    pub fn new(buffer_size: usize, sample_rate: usize) -> Self {
         Primary {
             buffer_size,
+	    sample_rate,
             monitored_sources: vec![],
+            id_position: 0,
         }
     }
 
@@ -111,7 +116,7 @@ impl Primary {
                 .filter_map(|&key| signals.get(&key).map(|s| (key, s)))
                 .collect();
 
-            let signal = source.sample(dependencies, self.buffer_size);
+            let signal = source.sample(dependencies, self.buffer_size, self.sample_rate);
             signals.insert(key, signal);
         }
 
@@ -124,8 +129,17 @@ impl Primary {
         }
 
         Signal::mix(&monitored_signals)
+	    .to_stereo()
             .get_interleaved_points()
             .map_err(|_| Error::UnableToBuildFinalStream)
+    }
+}
+
+impl Tracker for Primary {
+    fn create_id(&mut self) -> usize {
+        let id = self.id_position;
+        self.id_position += 1;
+        id
     }
 }
 
@@ -140,19 +154,23 @@ mod tests {
     #[test]
     fn test_complex_dependencies() {
         let buffer_size = 5;
+        let sample_rate = 48_000;
 
-        let mut primary = Primary::new(buffer_size);
+        let mut primary = Primary::new(buffer_size, sample_rate);
 
-        let mut clip_a = Clip::new(0, Signal::from_points(&[0.1]));
-        let mut clip_b = Clip::new(1, Signal::from_points(&[0.0, 0.2]));
-        let mut clip_c = Clip::new(2, Signal::from_points(&[0.0, 0.0, 0.3]));
-        let mut clip_d = Clip::new(3, Signal::from_points(&[0.0, 0.0, 0.0, 0.4]));
-        let mut clip_e = Clip::new(4, Signal::from_points(&[0.0, 0.0, 0.0, 0.0, 0.5]));
+        let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1]));
+        let mut clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.2]));
+        let mut clip_c = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.3]));
+        let mut clip_d = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.0, 0.4]));
+        let mut clip_e = Clip::new(
+            &mut primary,
+            Signal::from_points(&[0.0, 0.0, 0.0, 0.0, 0.5]),
+        );
 
-        let mut track_a = Track::new(5);
-        let mut track_b = Track::new(6);
-        let mut track_c = Track::new(7);
-        let mut track_d = Track::new(8);
+        let mut track_a = Track::new(&mut primary);
+        let mut track_b = Track::new(&mut primary);
+        let mut track_c = Track::new(&mut primary);
+        let mut track_d = Track::new(&mut primary);
 
         track_a.add_input(&clip_a).add_input(&clip_b);
 
@@ -186,12 +204,13 @@ mod tests {
     #[test]
     fn test_dependency_failure() {
         let buffer_size = 2;
+        let sample_rate = 48_000;
 
-        let mut primary = Primary::new(buffer_size);
-        let mut clip_a = Clip::new(0, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
-        let clip_b = Clip::new(1, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
-        let clip_c = Clip::new(2, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
-        let mut track = Track::new(3);
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
+        let clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
+        let clip_c = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
+        let mut track = Track::new(&mut primary);
 
         track
             .add_input(&clip_a)

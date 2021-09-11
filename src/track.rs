@@ -1,7 +1,7 @@
 use crate::signal::Signal;
 use crate::stream::Point;
 use crate::stream::Stream;
-use crate::traits::Source;
+use crate::traits::{Tracker, Source};
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
@@ -27,9 +27,9 @@ pub struct Track {
 
 impl Track {
     /// Create a new track with a unique `id`
-    pub fn new(id: usize) -> Track {
+    pub fn new(tracker: &mut dyn Tracker) -> Track {
         Track {
-            id,
+            id: tracker.create_id(),
             inputs: vec![],
             gain: ModSource::Owned(Signal::fixed(0.9)),
             panning: ModSource::Owned(Signal::fixed(0.0)),
@@ -95,8 +95,10 @@ impl Track {
 }
 
 impl Source for Track {
-    fn sample(&mut self, sources: Vec<(usize, &Signal)>, _buffer_size: usize) -> Signal {
+    fn sample(&mut self, sources: Vec<(usize, &Signal)>, _buffer_size: usize, _sample_rate: usize) -> Signal {
         let mut map = HashMap::new();
+
+	println!("sources: {:?}", sources);
 
         for (key, signal) in sources {
             map.insert(key, signal);
@@ -126,7 +128,7 @@ impl Source for Track {
                 signal
                     .clone()
                     .map(|s| s.amplify_with_cv(&gain_stream, |p| cv_to_db(p)))
-                    .map_stereo(|left, right| {
+                    .map_to_stereo(|left, right| {
                         (
                             left.amplify_with_cv(&panning_stream, |p| panning_to_db(p)),
                             right.amplify_with_cv(&panning_stream, |p| panning_to_db(-p)),
@@ -145,7 +147,17 @@ impl Source for Track {
     }
 
     fn get_sources(&self) -> Vec<usize> {
-        self.inputs.clone()
+        let mut sources = self.inputs.clone();
+
+	if let ModSource::External(key) = self.gain {
+	    sources.push(key);
+	}
+
+	if let ModSource::External(key) = self.panning {
+	    sources.push(key);
+	}
+
+	sources
     }
 }
 
@@ -168,8 +180,9 @@ mod tests {
     use super::*;
     use crate::clip::Clip;
     use crate::signal::Signal;
-    use crate::stream::Stream;
-    use crate::traits::{FromPoints, Source};
+    use crate::primary::Primary;
+    use crate::oscillator::Oscillator;
+    use crate::traits::FromPoints;
 
     #[test]
     fn test_cv_to_db() {
@@ -189,22 +202,27 @@ mod tests {
 
     #[test]
     fn test_panning() {
-        let buffer_size = 2;
+        let buffer_size = 4;
+        let sample_rate = 48_000;
 
-        let mut clip = Clip::new(0, Signal::from_points(&[0.1, 0.2, 0.3, 0.4]));
-        let mut track = Track::new(1);
+	let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip = Clip::new(&mut primary, Signal::from_points(&[1.0, 1.0, 1.0, 0.0]));
+	let mut lfo = Oscillator::new(&mut primary);
+        let mut track = Track::new(&mut primary);
 
+	lfo.frequency = 24_000.0;
         track.add_input(&clip);
-
-        let clip_signal = clip.sample(vec![], buffer_size);
-        let sources = vec![(clip.get_id(), &clip_signal)];
+	track.set_external_gain(&lfo);
+	primary.add_monitor(&track);
 
         assert_eq!(
-            track.sample(sources, buffer_size),
-            Signal::Stereo(
-                Stream::Points(vec![0.1, 0.2]),
-                Stream::Points(vec![0.1, 0.2]),
-            )
+            primary.sample(vec![&mut clip, &mut track, &mut lfo]).unwrap(),
+            vec![
+		0.063095726, 0.063095726,
+		0.001995262, 0.001995262,
+		0.063095726, 0.063095726,
+		0.0, 0.0
+	    ],
         );
     }
 }

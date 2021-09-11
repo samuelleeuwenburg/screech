@@ -8,8 +8,6 @@ use alloc::vec::Vec;
 /// and be able to produce a Signal
 #[derive(Debug, PartialEq, Clone)]
 pub enum Signal {
-    // Fixed unmoving signal, mainly used for
-    //  Fixed(
     /// Mono signal containing one stream
     Mono(Stream),
     /// Stereo signal containing two streams, left and right respectively
@@ -94,7 +92,7 @@ impl Signal {
     }
 
     /// Transform inner [`Stream`]s for left and right channels individually.
-    /// When given a mono channel it converts it to stereo by cloning left onto right
+    /// When given a mono channel it only applies the transformation to the left channel
     ///
     /// ```
     /// use screech::traits::FromPoints;
@@ -102,7 +100,8 @@ impl Signal {
     /// use screech::stream::Stream;
     ///
     /// let signal = Signal::from_points(&[0.5, 0.5, 0.5])
-    ///     .map_stereo(|left, right| (left.amplify(6.0), right.amplify(-6.0)));
+    ///     .to_stereo()
+    ///     .map_stereo(|left| { left.amplify(6.0) }, |right| { right.amplify(-6.0) });
     ///
     /// assert_eq!(
     ///     signal,
@@ -112,7 +111,37 @@ impl Signal {
     ///     )
     /// );
     /// ```
-    pub fn map_stereo<F>(self, f: F) -> Self
+    pub fn map_stereo<L, R>(self, l: L, r: R) -> Self
+    where
+        L: Fn(Stream) -> Stream,
+        R: Fn(Stream) -> Stream,
+    {
+        match self {
+            Signal::Mono(stream) => Signal::Mono(l(stream)),
+            Signal::Stereo(left, right) => Signal::Stereo(l(left), r(right)),
+        }
+    }
+
+    /// Transform inner [`Stream`]s for left and right channels individually.
+    /// When given a mono channel it converts it to stereo by cloning left onto right
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::signal::Signal;
+    /// use screech::stream::Stream;
+    ///
+    /// let signal = Signal::from_points(&[0.5, 0.5, 0.5])
+    ///     .map_to_stereo(|left, right| (left.amplify(6.0), right.amplify(-6.0)));
+    ///
+    /// assert_eq!(
+    ///     signal,
+    ///     Signal::Stereo(
+    ///         Stream::Points(vec![0.9976312, 0.9976312, 0.9976312]),
+    ///         Stream::Points(vec![0.2505936, 0.2505936, 0.2505936]),
+    ///     )
+    /// );
+    /// ```
+    pub fn map_to_stereo<F>(self, f: F) -> Self
     where
         F: Fn(Stream, Stream) -> (Stream, Stream),
     {

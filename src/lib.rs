@@ -2,7 +2,7 @@
 //!
 //! **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
-#![no_std]
+// #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
@@ -17,6 +17,12 @@ pub mod stream;
 
 /// Wrapper type to handle contextual channel manipulation for [`crate::stream::Stream`]
 pub mod signal;
+
+/// General purpose oscillator
+pub mod oscillator;
+
+/// Slew rate limiter for [`signal::Signal`] 
+pub mod slew;
 
 /// Most basic building block for non-generated sound
 pub mod clip;

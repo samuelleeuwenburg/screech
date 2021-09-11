@@ -2,9 +2,8 @@ use crate::signal::Signal;
 use alloc::vec::Vec;
 
 /// To implement [`Source`] means something can be a source of sound,
-/// just like when sampling discrete sources of sound, each component
-/// that is a sound source should be able to be "sampled".
-///
+/// just like when sampling continous sources of sound into discrete slices.
+/// Each component that is a sound source should be able to be "sampled".
 ///
 /// So no matter what when sampling a source it should return a
 /// [`Signal`] of a requested `buffer_size`, this way each component has
@@ -12,21 +11,34 @@ use alloc::vec::Vec;
 /// can choose to send the audio through unprocessed, or fail and send
 /// silence instead
 ///
-///
 /// [`crate::clip::Clip`] as an example implements [`Source`]
 /// [`crate::track::Track`] as an example implements [`Source`]
 pub trait Source {
-    /// type to define how to use the source, for example using an `Enum` type allows multiple
-    /// sources to be set and overwritten to "internal destinations"
-
     /// move one buffersize forward in discrete time
-    fn sample(&mut self, sources: Vec<(usize, &Signal)>, buffer_size: usize) -> Signal;
+    fn sample(
+	&mut self, sources: Vec<(usize, &Signal)>,
+	buffer_size: usize,
+	sample_rate: usize,
+    ) -> Signal;
 
     /// get id for instance, this is to identify this source when building the output
     fn get_id(&self) -> usize;
 
     /// Get a list of sources
     fn get_sources(&self) -> Vec<usize>;
+}
+
+/// Tracker trait to provide [`Source`]-es with unique IDs
+///
+/// Out of the box [`crate::primary::Primary`] implements this trait for you,
+/// but you can also roll your own.
+///
+/// structs like [`crate::track::Track`] and [`crate::clip::Clip`]
+/// take a `&mut dyn Tracker` as their first argument
+/// during construction to generate a unique ID
+pub trait Tracker {
+    /// Return a unique ID
+    fn create_id(&mut self) -> usize;
 }
 
 /// Trait to implement conversion from a slice of sized types to a generic

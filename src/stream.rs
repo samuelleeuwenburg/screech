@@ -24,6 +24,7 @@ pub enum Stream {
     Points(Vec<Point>),
     /// Fixed value, comparable to a DC signal
     Fixed(Point),
+    // @TODO: Zero
 }
 
 impl Stream {

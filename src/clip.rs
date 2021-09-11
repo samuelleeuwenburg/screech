@@ -1,5 +1,5 @@
 use crate::signal::Signal;
-use crate::traits::Source;
+use crate::traits::{Tracker, Source};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp;
@@ -34,9 +34,9 @@ pub enum ClipErr {
 
 impl Clip {
     /// Create new clip from a [`Signal`]
-    pub fn new(id: usize, audio: Signal) -> Self {
+    pub fn new(tracker: &mut dyn Tracker, audio: Signal) -> Self {
         Clip {
-            id,
+            id: tracker.create_id(),
             audio,
             speed: 1.0,
             position: 0,
@@ -80,7 +80,7 @@ impl Clip {
 }
 
 impl Source for Clip {
-    fn sample(&mut self, _sources: Vec<(usize, &Signal)>, buffer_size: usize) -> Signal {
+    fn sample(&mut self, _sources: Vec<(usize, &Signal)>, buffer_size: usize, _sample_rate: usize) -> Signal {
         match self.try_sample(buffer_size) {
             Ok(signal) => signal,
             Err(_) => Signal::silence(buffer_size),
@@ -101,62 +101,66 @@ mod tests {
     use super::*;
     use crate::stream::Stream;
     use crate::traits::FromPoints;
+    use crate::primary::Primary;
     use alloc::vec;
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
+	let mut primary = Primary::new(0, 48_000);
         let mut clip = Clip::new(
-            0,
+            &mut primary,
             Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
         );
         clip.play_style = PlayStyle::Loop;
         let buffer_size = 5;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.5, 0.6, 0.7, 0.8, 0.0]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.1, 0.2, 0.3, 0.4, 0.5]))
         );
     }
 
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
-        let mut clip = Clip::new(0, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
+	let mut primary = Primary::new(0, 48_000);
+        let mut clip = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
         clip.play_style = PlayStyle::Loop;
         let buffer_size = 8;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.1, 0.2]))
         );
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.3, 0.4, 0.0, 0.1, 0.2, 0.3, 0.4, 0.0]))
         );
     }
 
     #[test]
     fn test_play_oneshot() {
+	let mut primary = Primary::new(0, 48_000);
         let buffer_size = 8;
-        let mut clip = Clip::new(0, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
+        let mut clip = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
         clip.play_style = PlayStyle::OneShot;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size),
+            clip.sample(vec![], buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
         );
     }
