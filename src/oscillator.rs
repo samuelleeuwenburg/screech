@@ -20,17 +20,17 @@ use alloc::vec::Vec;
 /// let mut oscillator = Oscillator::new(&mut primary);
 /// 
 /// oscillator.frequency = 1.0;
-/// oscillator.amplitude = 1.0;
+/// oscillator.amplitude = 0.5;
 /// 
 /// primary.add_monitor(&oscillator);
 /// 
 /// assert_eq!(
 ///     primary.sample(vec![&mut oscillator]).unwrap(),
 ///     vec![
-/// 	    0.25, 0.25, 0.5, 0.5, -0.25, -0.25, -0.0, -0.0,
-/// 	    0.25, 0.25, 0.5, 0.5, -0.25, -0.25, -0.0, -0.0,
-/// 	    0.25, 0.25, 0.5, 0.5, -0.25, -0.25, -0.0, -0.0,
-/// 	    0.25, 0.25, 0.5, 0.5, -0.25, -0.25, -0.0, -0.0,
+/// 	    0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
+/// 	    0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
+/// 	    0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
+/// 	    0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
 ///     ],
 /// );
 /// ```
@@ -39,22 +39,125 @@ pub struct Oscillator {
     pub frequency: f32,
     /// amplitude peak to peak centered around 0.0
     ///
-    /// for example an amplitude of `1.0` will generate a saw
+    /// for example an amplitude of `0.5` will generate a saw
     /// wave between `-0.5` and `0.5`
     pub amplitude: f32,
     id: usize,
     value: Point,
+    waveshape: Waveshape,
+}
+
+enum Waveshape {
+    Saw,
+    Square(f32),
+    Triangle,
 }
 
 impl Oscillator {
-    /// Create new oscillator
+    /// Create a new saw oscillator with a default
+    /// frequency of `1.0` and an amplitute of `0.5`.
     pub fn new(tracker: &mut dyn Tracker) -> Self {
         Oscillator {
             id: tracker.create_id(),
             frequency: 1.0,
-	    amplitude: 1.0,
+	    amplitude: 0.5,
 	    value: 0.0,
+	    waveshape: Waveshape::Saw,
         }
+    }
+
+    /// Set the main output to triangle
+    ///
+    /// ```
+    /// use screech::primary::Primary;
+    /// use screech::oscillator::Oscillator;
+    ///
+    /// let sample_rate = 4;
+    /// let buffer_size = sample_rate * 4;
+    ///
+    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut oscillator = Oscillator::new(&mut primary);
+    ///
+    /// oscillator.frequency = 0.5;
+    /// oscillator.amplitude = 1.0;
+    /// oscillator.output_triangle();
+    ///
+    /// primary.add_monitor(&oscillator);
+    ///
+    /// assert_eq!(
+    /// 	primary.sample(vec![&mut oscillator]).unwrap(),
+    /// 	vec![
+    ///             -1.0, -1.0, -0.5, -0.5, 0.0, 0.0, 0.5, 0.5,
+    ///             1.0, 1.0, 0.5, 0.5, 0.0, 0.0, -0.5, -0.5,
+    ///             -1.0, -1.0, -0.5, -0.5, 0.0, 0.0, 0.5, 0.5,
+    ///             1.0, 1.0, 0.5, 0.5, 0.0, 0.0, -0.5, -0.5,
+    /// 	],
+    /// );
+    /// ```
+    pub fn output_triangle(&mut self) -> &mut Self {
+	self.waveshape = Waveshape::Triangle;
+	self
+    }
+
+    /// Set the main output to square
+    /// with a duty cycle between `0.0` (0%) and `1.0` (100%).
+    ///
+    /// ```
+    /// use screech::primary::Primary;
+    /// use screech::oscillator::Oscillator;
+    ///
+    /// let sample_rate = 4;
+    /// let buffer_size = sample_rate;
+    ///
+    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut oscillator = Oscillator::new(&mut primary);
+    ///
+    /// oscillator.frequency = 1.0;
+    /// oscillator.amplitude = 1.0;
+    /// // 25% duty cycle
+    /// oscillator.output_square(0.25);
+    ///
+    /// primary.add_monitor(&oscillator);
+    ///
+    /// assert_eq!(
+    /// 	primary.sample(vec![&mut oscillator]).unwrap(),
+    /// 	vec![-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0],
+    /// );
+    /// ```
+    pub fn output_square(&mut self, duty_cycle: f32) -> &mut Self {
+	self.waveshape = Waveshape::Square(duty_cycle);
+	self
+    }
+
+    /// Set the main output to saw
+    ///
+    /// ```
+    /// use screech::primary::Primary;
+    /// use screech::oscillator::Oscillator;
+    ///
+    /// let sample_rate = 4;
+    /// let buffer_size = sample_rate * 2;
+    ///
+    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut oscillator = Oscillator::new(&mut primary);
+    ///
+    /// oscillator.frequency = 0.5;
+    /// oscillator.amplitude = 1.0;
+    /// oscillator.output_saw();
+    ///
+    /// primary.add_monitor(&oscillator);
+    ///
+    /// assert_eq!(
+    /// 	primary.sample(vec![&mut oscillator]).unwrap(),
+    /// 	vec![
+    ///              0.0, 0.0,  0.25,  0.25,  0.5,  0.5,  0.75,  0.75,
+    ///              1.0, 1.0, -0.75, -0.75, -0.5, -0.5, -0.25, -0.25,
+    /// 	],
+    /// );
+    /// ```
+    pub fn output_saw(&mut self) -> &mut Self {
+	self.waveshape = Waveshape::Saw;
+	self
     }
 }
 
@@ -62,16 +165,41 @@ impl Source for Oscillator {
     fn sample(&mut self, _sources: Vec<(usize, &Signal)>, buffer_size: usize, sample_rate: usize) -> Signal {
 	let mut points = vec![];
 
-	let increase_per_sample = self.amplitude / sample_rate as f32 * self.frequency;
+	// peak to peak conversion of amplitude
+	let peak_to_peak = self.amplitude * 2.0;
+
+	let increase_per_sample = peak_to_peak / sample_rate as f32 * self.frequency;
 
 	for _ in 0..buffer_size {
+	    let point = match self.waveshape {
+		Waveshape::Saw => self.value,
+		Waveshape::Square(duty_cycle) => {
+		    if self.value > self.amplitude * duty_cycle - self.amplitude / 2.0 {
+			-self.amplitude
+		    } else {
+			self.amplitude
+		    }
+		}
+		Waveshape::Triangle => {
+		    let triangle = if self.value > 0.0 {
+			self.value
+		    } else {
+			// invert bottom half
+			-self.value
+		    };
+
+		    // normalize for amplitude
+		    (triangle * 2.0) - self.amplitude
+		}
+	    };
+
+	    points.push(point);
+
 	    self.value += increase_per_sample;
 
-	    if self.value > self.amplitude / 2.0 {
-		self.value -= self.amplitude;
+	    if self.value > peak_to_peak / 2.0 {
+		self.value -= peak_to_peak;
 	    }
-
-	    points.push(self.value);
 	}
 
         Signal::from_points(&points)
@@ -102,17 +230,17 @@ mod tests {
         let mut oscillator = Oscillator::new(&mut primary);
 
 	oscillator.frequency = 1.0;
-	oscillator.amplitude = 0.5;
+	oscillator.amplitude = 0.25;
 
         primary.add_monitor(&oscillator);
 
         assert_eq!(
             primary.sample(vec![&mut oscillator]).unwrap(),
             vec![
-		0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0,
-		0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0,
-		0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0,
-		0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0,
+		0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125,
+		0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125,
+		0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125,
+		 0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125,
 	    ],
         );
     }
@@ -126,16 +254,16 @@ mod tests {
         let mut oscillator = Oscillator::new(&mut primary);
 
 	oscillator.frequency = 1.5;
-	oscillator.amplitude = 1.0;
+	oscillator.amplitude = 0.5;
 
         primary.add_monitor(&oscillator);
 
         assert_eq!(
             primary.sample(vec![&mut oscillator]).unwrap(),
             vec![
-		0.375, 0.375, -0.25, -0.25, 0.125, 0.125, 0.5, 0.5,
-		-0.125, -0.125, 0.25, 0.25, -0.375, -0.375, 0.0, 0.0,
-		0.375, 0.375, -0.25, -0.25, 0.125, 0.125, 0.5, 0.5
+		0.0, 0.0, 0.375, 0.375, -0.25, -0.25, 0.125, 0.125,
+		0.5, 0.5, -0.125, -0.125, 0.25, 0.25, -0.375, -0.375,
+		0.0, 0.0, 0.375, 0.375, -0.25, -0.25, 0.125, 0.125
 	    ],
         );
     }

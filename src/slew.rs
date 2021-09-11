@@ -93,6 +93,7 @@ mod tests {
     use super::*;
     use crate::signal::Signal;
     use crate::traits::FromPoints;
+    use alloc::vec;
 
     #[test]
     fn test_slew_up() {

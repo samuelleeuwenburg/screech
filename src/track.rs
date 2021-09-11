@@ -1,16 +1,10 @@
 use crate::signal::Signal;
 use crate::stream::Point;
-use crate::stream::Stream;
 use crate::traits::{Tracker, Source};
+use crate::mod_source::ModSource;
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-
-#[derive(Debug, PartialEq, Clone)]
-enum ModSource {
-    Owned(Signal),
-    External(usize),
-}
 
 /// Standard track with panning and volume control
 #[derive(Debug, PartialEq, Clone)]
@@ -98,27 +92,19 @@ impl Source for Track {
     fn sample(&mut self, sources: Vec<(usize, &Signal)>, _buffer_size: usize, _sample_rate: usize) -> Signal {
         let mut map = HashMap::new();
 
-	println!("sources: {:?}", sources);
+	let gain_stream = self.gain
+	    .get(&sources)
+	    .unwrap_or(Signal::fixed(0.9))
+	    .get_stream();
+
+	let panning_stream = self.panning
+	    .get(&sources)
+	    .unwrap_or(Signal::fixed(0.0))
+	    .get_stream();
 
         for (key, signal) in sources {
             map.insert(key, signal);
         }
-
-        let gain_stream = match &self.gain {
-            ModSource::Owned(signal) => signal.clone().get_stream(),
-            ModSource::External(key) => map
-                .get(&key)
-                .map(|&s| s.clone().get_stream())
-                .unwrap_or(Stream::fixed(0.9)),
-        };
-
-        let panning_stream = match &self.panning {
-            ModSource::Owned(signal) => signal.clone().get_stream(),
-            ModSource::External(key) => map
-                .get(&key)
-                .map(|&s| s.clone().get_stream())
-                .unwrap_or(Stream::fixed(0.0)),
-        };
 
         let sources: Vec<Signal> = self
             .inputs
@@ -218,9 +204,9 @@ mod tests {
         assert_eq!(
             primary.sample(vec![&mut clip, &mut track, &mut lfo]).unwrap(),
             vec![
-		0.063095726, 0.063095726,
 		0.001995262, 0.001995262,
 		0.063095726, 0.063095726,
+		0.001995262, 0.001995262,
 		0.0, 0.0
 	    ],
         );

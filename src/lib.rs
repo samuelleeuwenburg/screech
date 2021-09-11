@@ -2,12 +2,14 @@
 //!
 //! **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
-// #![no_std]
+#![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
 
 mod graph;
+
+mod mod_source;
 
 /// Common traits used throughout the library
 pub mod traits;
