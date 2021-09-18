@@ -1,7 +1,7 @@
+use crate::mod_source::ModSource;
 use crate::signal::Signal;
 use crate::stream::Point;
-use crate::traits::{Tracker, Source};
-use crate::mod_source::ModSource;
+use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
@@ -89,43 +89,35 @@ impl Track {
 }
 
 impl Source for Track {
-    fn sample(&mut self, sources: Vec<(usize, &Signal)>, _buffer_size: usize, _sample_rate: usize) -> Signal {
-        let mut map = HashMap::new();
+    fn sample(
+        &mut self,
+        sources: &HashMap<usize, Signal>,
+        buffer_size: usize,
+        _sample_rate: usize,
+    ) -> Signal {
+        let gain_stream = self
+            .gain
+            .get(&sources)
+            .unwrap_or_else(|| Signal::fixed(0.9))
+            .into_stream();
 
-	let gain_stream = self.gain
-	    .get(&sources)
-	    .unwrap_or(Signal::fixed(0.9))
-	    .get_stream();
+        let panning_stream = self
+            .panning
+            .get(&sources)
+            .unwrap_or_else(|| Signal::fixed(0.0))
+            .into_stream();
 
-	let panning_stream = self.panning
-	    .get(&sources)
-	    .unwrap_or(Signal::fixed(0.0))
-	    .get_stream();
+        let sources: Vec<&Signal> = self.inputs.iter().filter_map(|k| sources.get(k)).collect();
 
-        for (key, signal) in sources {
-            map.insert(key, signal);
-        }
-
-        let sources: Vec<Signal> = self
-            .inputs
-            .iter()
-            .filter_map(|k| map.get(k))
-            .map(|&signal| {
-                signal
-                    .clone()
-                    .map(|s| s.amplify_with_cv(&gain_stream, |p| cv_to_db(p)))
-                    .map_to_stereo(|left, right| {
-                        (
-                            left.amplify_with_cv(&panning_stream, |p| panning_to_db(p)),
-                            right.amplify_with_cv(&panning_stream, |p| panning_to_db(-p)),
-                        )
-                    })
+        Signal::silence(buffer_size)
+            .mix_into(&sources)
+            .map(|s| s.amplify_with_cv(&gain_stream, cv_to_db))
+            .map_to_stereo(|left, right| {
+                (
+                    left.amplify_with_cv(&panning_stream, panning_to_db),
+                    right.amplify_with_cv(&panning_stream, |p| panning_to_db(-p)),
+                )
             })
-            .collect();
-
-        let refs: Vec<&Signal> = sources.iter().collect();
-
-        Signal::mix(&refs)
     }
 
     fn get_id(&self) -> usize {
@@ -135,15 +127,15 @@ impl Source for Track {
     fn get_sources(&self) -> Vec<usize> {
         let mut sources = self.inputs.clone();
 
-	if let ModSource::External(key) = self.gain {
-	    sources.push(key);
-	}
+        if let ModSource::External(key) = self.gain {
+            sources.push(key);
+        }
 
-	if let ModSource::External(key) = self.panning {
-	    sources.push(key);
-	}
+        if let ModSource::External(key) = self.panning {
+            sources.push(key);
+        }
 
-	sources
+        sources
     }
 }
 
@@ -165,9 +157,9 @@ fn panning_to_db(cv: Point) -> f32 {
 mod tests {
     use super::*;
     use crate::clip::Clip;
-    use crate::signal::Signal;
-    use crate::primary::Primary;
     use crate::oscillator::Oscillator;
+    use crate::primary::Primary;
+    use crate::signal::Signal;
     use crate::traits::FromPoints;
 
     #[test]
@@ -191,24 +183,30 @@ mod tests {
         let buffer_size = 4;
         let sample_rate = 48_000;
 
-	let mut primary = Primary::new(buffer_size, sample_rate);
-        let mut clip = Clip::new(&mut primary, Signal::from_points(&[1.0, 1.0, 1.0, 0.0]));
-	let mut lfo = Oscillator::new(&mut primary);
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip = Clip::new(&mut primary, Signal::from_points(vec![1.0, 1.0, 1.0, 0.0]));
+        let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
 
-	lfo.frequency = 24_000.0;
+        lfo.frequency = 24_000.0;
         track.add_input(&clip);
-	track.set_external_gain(&lfo);
-	primary.add_monitor(&track);
+        track.set_external_gain(&lfo);
+        primary.add_monitor(&track);
 
         assert_eq!(
-            primary.sample(vec![&mut clip, &mut track, &mut lfo]).unwrap(),
+            primary
+                .sample(vec![&mut clip, &mut track, &mut lfo])
+                .unwrap(),
             vec![
-		0.001995262, 0.001995262,
-		0.063095726, 0.063095726,
-		0.001995262, 0.001995262,
-		0.0, 0.0
-	    ],
+                0.001995262,
+                0.001995262,
+                0.063095726,
+                0.063095726,
+                0.001995262,
+                0.001995262,
+                0.0,
+                0.0
+            ],
         );
     }
 }

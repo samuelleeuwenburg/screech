@@ -1,8 +1,9 @@
 use crate::signal::Signal;
-use crate::traits::{Tracker, Source};
+use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp;
+use hashbrown::HashMap;
 
 /// Most basic building block for non-generated sound
 #[derive(Debug, PartialEq, Clone)]
@@ -80,7 +81,12 @@ impl Clip {
 }
 
 impl Source for Clip {
-    fn sample(&mut self, _sources: Vec<(usize, &Signal)>, buffer_size: usize, _sample_rate: usize) -> Signal {
+    fn sample(
+        &mut self,
+        _sources: &HashMap<usize, Signal>,
+        buffer_size: usize,
+        _sample_rate: usize,
+    ) -> Signal {
         match self.try_sample(buffer_size) {
             Ok(signal) => signal,
             Err(_) => Signal::silence(buffer_size),
@@ -99,68 +105,74 @@ impl Source for Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primary::Primary;
     use crate::stream::Stream;
     use crate::traits::FromPoints;
-    use crate::primary::Primary;
     use alloc::vec;
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
-	let mut primary = Primary::new(0, 48_000);
+        let mut primary = Primary::new(0, 48_000);
         let mut clip = Clip::new(
             &mut primary,
-            Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
+            Signal::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
         );
         clip.play_style = PlayStyle::Loop;
         let buffer_size = 5;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.5, 0.6, 0.7, 0.8, 0.0]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.1, 0.2, 0.3, 0.4, 0.5]))
         );
     }
 
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
-	let mut primary = Primary::new(0, 48_000);
-        let mut clip = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
+        let mut primary = Primary::new(0, 48_000);
+        let mut clip = Clip::new(
+            &mut primary,
+            Signal::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
+        );
         clip.play_style = PlayStyle::Loop;
         let buffer_size = 8;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.1, 0.2]))
         );
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.3, 0.4, 0.0, 0.1, 0.2, 0.3, 0.4, 0.0]))
         );
     }
 
     #[test]
     fn test_play_oneshot() {
-	let mut primary = Primary::new(0, 48_000);
+        let mut primary = Primary::new(0, 48_000);
         let buffer_size = 8;
-        let mut clip = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.1, 0.2, 0.3, 0.4]));
+        let mut clip = Clip::new(
+            &mut primary,
+            Signal::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
+        );
         clip.play_style = PlayStyle::OneShot;
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0]))
         );
 
         assert_eq!(
-            clip.sample(vec![], buffer_size, 48_000),
+            clip.sample(&HashMap::new(), buffer_size, 48_000),
             Signal::Mono(Stream::Points(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
         );
     }

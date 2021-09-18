@@ -2,6 +2,7 @@ use crate::stream::{Point, Stream, StreamErr};
 use crate::traits::FromPoints;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cmp;
 
 /// Most fundamental type for carrying signals throughout the library.
 /// Each component that has a sound source should be sampleable
@@ -20,6 +21,8 @@ pub enum Signal {
 pub enum SignalErr {
     /// Unable to get point for [`Stream`] using [`Stream::get_point`]
     UnableToGetPointForStream,
+    /// It is impossible to build up a proper audio signal from a fixed point Signal
+    UnableToBuildStreamFromFixedPointSignal,
 }
 
 impl Signal {
@@ -61,6 +64,16 @@ impl Signal {
         }
     }
 
+    /// Put a stream into a mono signal
+    pub fn from_stream(stream: Stream) -> Self {
+        Signal::Mono(stream)
+    }
+
+    /// Put two streams into a stereo signal
+    pub fn from_streams(left: Stream, right: Stream) -> Self {
+        Signal::Stereo(left, right)
+    }
+
     /// Transform inner [`Stream`]
     ///
     /// ```
@@ -99,7 +112,7 @@ impl Signal {
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     ///
-    /// let signal = Signal::from_points(&[0.5, 0.5, 0.5])
+    /// let signal = Signal::from_points(vec![0.5, 0.5, 0.5])
     ///     .to_stereo()
     ///     .map_stereo(|left| { left.amplify(6.0) }, |right| { right.amplify(-6.0) });
     ///
@@ -130,7 +143,7 @@ impl Signal {
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     ///
-    /// let signal = Signal::from_points(&[0.5, 0.5, 0.5])
+    /// let signal = Signal::from_points(vec![0.5, 0.5, 0.5])
     ///     .map_to_stereo(|left, right| (left.amplify(6.0), right.amplify(-6.0)));
     ///
     /// assert_eq!(
@@ -189,6 +202,51 @@ impl Signal {
 
     // }
 
+    /// Mix signals into existing signal
+    ///
+    /// ***note*** on mono channels will not sum the right channel to the left
+    /// ***note*** like its counterpart on [`stream::Stream::mix_into()`] this will not
+    /// change the length of the signal
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::signal::Signal;
+    /// use screech::stream::Stream;
+    ///
+    /// let signals = [
+    ///     &Signal::from_points(vec![0.0, 0.1, 0.1, 0.1]),
+    ///     &Signal::Stereo(
+    ///         Stream::from_points(vec![0.0, 0.1, 0.2, 0.3]),
+    ///         Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]),
+    ///     )
+    /// ];
+    ///
+    /// let signal = Signal::from_points(vec![0.1, 0.0, 0.1])
+    ///     .mix_into(&signals);
+    ///
+    /// assert_eq!(
+    ///     signal,
+    ///     Signal::Mono(Stream::Points(vec![0.1, 0.2, 0.4]))
+    /// )
+    /// ```
+    pub fn mix_into(self, signals: &[&Signal]) -> Self {
+        match self {
+            Signal::Mono(stream) => {
+                let streams: Vec<&Stream> = signals.iter().map(|s| s.get_mono_stream()).collect();
+                Signal::Mono(stream.mix_into(&streams))
+            }
+            Signal::Stereo(left, right) => {
+                let lefts: Vec<&Stream> = signals.iter().map(|s| s.get_mono_stream()).collect();
+                let rights: Vec<&Stream> = signals
+                    .iter()
+                    .map(|s| s.get_right_stream().unwrap_or(s.get_mono_stream()))
+                    .collect();
+
+                Signal::Stereo(left.mix_into(&lefts), right.mix_into(&rights))
+            }
+        }
+    }
+
     /// Mix signals together into a new stereo signal
     ///
     /// ```
@@ -196,17 +254,17 @@ impl Signal {
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     ///
-    /// let result = Signal::mix(&[
-    ///     &Signal::from_points(&[0.1, 0.0, 0.1]),
-    ///     &Signal::from_points(&[0.0, 0.1, 0.1, 0.1]),
+    /// let signal = Signal::mix(&[
+    ///     &Signal::from_points(vec![0.1, 0.0, 0.1]),
+    ///     &Signal::from_points(vec![0.0, 0.1, 0.1, 0.1]),
     ///     &Signal::Stereo(
-    ///         Stream::from_points(&[0.0, 0.1, 0.2, 0.3]),
-    ///         Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
+    ///         Stream::from_points(vec![0.0, 0.1, 0.2, 0.3]),
+    ///         Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]),
     ///     )
     /// ]);
     ///
     /// assert_eq!(
-    ///     result,
+    ///     signal,
     ///     Signal::Stereo(
     ///         Stream::Points(vec![0.1, 0.2, 0.4, 0.4]),
     ///         Stream::Points(vec![0.2, 0.3, 0.5, 0.5]),
@@ -214,23 +272,28 @@ impl Signal {
     /// )
     /// ```
     pub fn mix(signals: &[&Signal]) -> Self {
-        signals
-            .iter()
-            .fold(Signal::silence(0), |sum, signal| match (sum, signal) {
-                (Signal::Mono(a), Signal::Mono(b)) => Signal::Mono(Stream::mix(&[&a, b])),
-                (Signal::Mono(a), Signal::Stereo(left, right)) => {
-                    Signal::Stereo(Stream::mix(&[&a, left]), Stream::mix(&[&a, right]))
+        let length = signals.iter().fold(0, |a, b| cmp::max(a, b.len()));
+
+        let mut lefts: Vec<&Stream> = vec![];
+        let mut rights: Vec<&Stream> = vec![];
+        let mut is_mono = true;
+
+        for s in signals {
+            lefts.push(s.get_mono_stream());
+            match s.get_right_stream() {
+                Some(stream) => {
+                    is_mono = false;
+                    rights.push(stream);
                 }
-                (Signal::Stereo(left, right), Signal::Mono(b)) => {
-                    Signal::Stereo(Stream::mix(&[b, &left]), Stream::mix(&[b, &right]))
-                }
-                (Signal::Stereo(left_a, right_a), Signal::Stereo(left_b, right_b)) => {
-                    Signal::Stereo(
-                        Stream::mix(&[&left_a, left_b]),
-                        Stream::mix(&[&right_a, right_b]),
-                    )
-                }
-            })
+                None => rights.push(s.get_mono_stream()),
+            }
+        }
+
+        if is_mono {
+            Signal::silence(length).map(|s| s.mix_into(&lefts))
+        } else {
+            Signal::silence(length).map_to_stereo(|l, r| (l.mix_into(&lefts), r.mix_into(&rights)))
+        }
     }
 
     /// match channels for current Signal based on passed Signal
@@ -300,8 +363,8 @@ impl Signal {
     /// use screech::stream::Stream;
     ///
     /// let stereo_signal = Signal::Stereo(
-    ///     Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
-    ///     Stream::from_points(&[-0.1, -0.2, -0.3, -0.4]),
+    ///     Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]),
+    ///     Stream::from_points(vec![-0.1, -0.2, -0.3, -0.4]),
     /// );
     ///
     /// assert_eq!(
@@ -326,8 +389,8 @@ impl Signal {
     /// use screech::stream::Stream;
     ///
     /// let stereo_signal = Signal::Stereo(
-    ///     Stream::from_points(&[0.1, 0.2, 0.3, 0.4]),
-    ///     Stream::from_points(&[0.5, 0.6, 0.7, 0.8]),
+    ///     Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]),
+    ///     Stream::from_points(vec![0.5, 0.6, 0.7, 0.8]),
     /// );
     ///
     /// assert_eq!(
@@ -351,7 +414,7 @@ impl Signal {
     /// use screech::signal::Signal;
     /// use screech::stream::Stream;
     ///
-    /// let mono_signal = Signal::from_points(&[0.1, 0.2, 0.3, 0.4]);
+    /// let mono_signal = Signal::from_points(vec![0.1, 0.2, 0.3, 0.4]);
     ///
     /// assert_eq!(
     ///     mono_signal.to_stereo(),
@@ -371,10 +434,27 @@ impl Signal {
     /// Consume the signal and return the inner stream
     ///
     /// This method will mix streams together for stereo signals
-    pub fn get_stream(self) -> Stream {
+    pub fn into_stream(self) -> Stream {
         match self {
             Signal::Mono(stream) => stream,
-            Signal::Stereo(a, b) => Stream::mix(&[&a, &b]),
+            Signal::Stereo(a, b) => a.mix_into(&[&b]),
+        }
+    }
+
+    /// Get a reference of the inner stream,
+    /// or the left stream if it is a stereo signal
+    pub fn get_mono_stream(&self) -> &Stream {
+        match self {
+            Signal::Mono(stream) => stream,
+            Signal::Stereo(left, _) => left,
+        }
+    }
+
+    /// Get a reference to the inner right stream if available
+    pub fn get_right_stream(&self) -> Option<&Stream> {
+        match self {
+            Signal::Mono(_) => None,
+            Signal::Stereo(_, right) => Some(right),
         }
     }
 
@@ -387,8 +467,8 @@ impl Signal {
     /// use screech::stream::Stream;
     ///
     /// let stereo_signal = Signal::Stereo(
-    ///     Stream::from_points(&[0.1, 0.1, 0.1, 0.1]),
-    ///     Stream::from_points(&[-0.1, -0.1, -0.1, -0.1]),
+    ///     Stream::from_points(vec![0.1, 0.1, 0.1, 0.1]),
+    ///     Stream::from_points(vec![-0.1, -0.1, -0.1, -0.1]),
     /// );
     ///
     /// assert_eq!(
@@ -398,21 +478,23 @@ impl Signal {
     /// ```
     pub fn get_interleaved_points(&self) -> Result<Vec<f32>, SignalErr> {
         match self {
-            Signal::Mono(stream) => Ok(stream.get_points()),
+            Signal::Mono(stream) => stream
+                .get_points()
+                .cloned()
+                .ok_or(SignalErr::UnableToBuildStreamFromFixedPointSignal),
             Signal::Stereo(left, right) => {
                 let mut result: Vec<f32> = vec![];
 
                 for i in 0..left.len() {
                     result.push(
-                        left.get_point(i)
-                            .ok_or(SignalErr::UnableToGetPointForStream)?
-                            .clone(),
+                        *left
+                            .get_point(i)
+                            .ok_or(SignalErr::UnableToGetPointForStream)?,
                     );
                     result.push(
-                        right
+                        *right
                             .get_point(i)
-                            .ok_or(SignalErr::UnableToGetPointForStream)?
-                            .clone(),
+                            .ok_or(SignalErr::UnableToGetPointForStream)?,
                     );
                 }
 
@@ -423,25 +505,25 @@ impl Signal {
 }
 
 impl FromPoints<f32, Signal> for Signal {
-    fn from_points(points: &[f32]) -> Signal {
+    fn from_points(points: Vec<f32>) -> Signal {
         Signal::Mono(Stream::from_points(points))
     }
 }
 
 impl FromPoints<i32, Signal> for Signal {
-    fn from_points(points: &[i32]) -> Signal {
+    fn from_points(points: Vec<i32>) -> Signal {
         Signal::Mono(Stream::from_points(points))
     }
 }
 
 impl FromPoints<i16, Signal> for Signal {
-    fn from_points(points: &[i16]) -> Signal {
+    fn from_points(points: Vec<i16>) -> Signal {
         Signal::Mono(Stream::from_points(points))
     }
 }
 
 impl FromPoints<u8, Signal> for Signal {
-    fn from_points(points: &[u8]) -> Signal {
+    fn from_points(points: Vec<u8>) -> Signal {
         Signal::Mono(Stream::from_points(points))
     }
 }

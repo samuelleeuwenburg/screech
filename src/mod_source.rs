@@ -1,5 +1,5 @@
-use alloc::vec::Vec;
 use crate::signal::Signal;
+use hashbrown::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ModSource {
@@ -7,18 +7,12 @@ pub enum ModSource {
     External(usize),
 }
 
-
 impl ModSource {
-    pub fn get(&self, sources: &Vec<(usize, &Signal)>) -> Option<Signal> {
-	match self {
-	    ModSource::Owned(signal) => Some(signal.clone()),
-	    ModSource::External(key) => {
-		sources
-		    .iter()
-		    .find(|(i, _)| i == key)
-		    .map(|&(_, s)| s.clone())
-	    }
-	}
+    //@TODO: -> Option<&Signal>
+    pub fn get(&self, sources: &HashMap<usize, Signal>) -> Option<Signal> {
+        match self {
+            ModSource::Owned(signal) => Some(signal.clone()),
+            ModSource::External(key) => sources.get(key).cloned(),
+        }
     }
 }
-

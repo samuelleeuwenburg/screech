@@ -17,8 +17,8 @@ use hashbrown::HashMap;
 /// let sample_rate = 48_000;
 ///
 /// let mut primary = Primary::new(buffer_size, sample_rate);
-/// let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
-/// let mut clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
+/// let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.2, 0.2, 0.1]));
+/// let mut clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
 ///
 /// track.add_input(&clip_a);
@@ -70,7 +70,7 @@ impl Primary {
     pub fn new(buffer_size: usize, sample_rate: usize) -> Self {
         Primary {
             buffer_size,
-	    sample_rate,
+            sample_rate,
             monitored_sources: vec![],
             id_position: 0,
         }
@@ -100,23 +100,14 @@ impl Primary {
             sources.insert(source.get_id(), source);
         }
 
-        let mut sorted = topological_sort(graph).map_err(|e| match e {
+        let sorted = topological_sort(graph).map_err(|e| match e {
             GraphError::NoDirectedAcyclicGraph => Error::CyclicDependencies,
         })?;
-
-        // reverse the dependency graph
-        sorted.reverse();
 
         for key in sorted {
             // build signals
             let source = sources.get_mut(&key).ok_or(Error::MissingDependency)?;
-            let dependencies: Vec<(usize, &Signal)> = source
-                .get_sources()
-                .iter()
-                .filter_map(|&key| signals.get(&key).map(|s| (key, s)))
-                .collect();
-
-            let signal = source.sample(dependencies, self.buffer_size, self.sample_rate);
+            let signal = source.sample(&signals, self.buffer_size, self.sample_rate);
             signals.insert(key, signal);
         }
 
@@ -129,7 +120,7 @@ impl Primary {
         }
 
         Signal::mix(&monitored_signals)
-	    .to_stereo()
+            .to_stereo()
             .get_interleaved_points()
             .map_err(|_| Error::UnableToBuildFinalStream)
     }
@@ -137,6 +128,7 @@ impl Primary {
 
 impl Tracker for Primary {
     fn create_id(&mut self) -> usize {
+        // @TODO: this is pretty naive, best keep track of ids somewhere in a vec
         let id = self.id_position;
         self.id_position += 1;
         id
@@ -158,13 +150,13 @@ mod tests {
 
         let mut primary = Primary::new(buffer_size, sample_rate);
 
-        let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1]));
-        let mut clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.2]));
-        let mut clip_c = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.3]));
-        let mut clip_d = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.0, 0.4]));
+        let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1]));
+        let mut clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.2]));
+        let mut clip_c = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.3]));
+        let mut clip_d = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.0, 0.4]));
         let mut clip_e = Clip::new(
             &mut primary,
-            Signal::from_points(&[0.0, 0.0, 0.0, 0.0, 0.5]),
+            Signal::from_points(vec![0.0, 0.0, 0.0, 0.0, 0.5]),
         );
 
         let mut track_a = Track::new(&mut primary);
@@ -207,9 +199,9 @@ mod tests {
         let sample_rate = 48_000;
 
         let mut primary = Primary::new(buffer_size, sample_rate);
-        let mut clip_a = Clip::new(&mut primary, Signal::from_points(&[0.1, 0.2, 0.2, 0.1]));
-        let clip_b = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
-        let clip_c = Clip::new(&mut primary, Signal::from_points(&[0.0, 0.0, 0.1, 0.3]));
+        let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.2, 0.2, 0.1]));
+        let clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
+        let clip_c = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
         let mut track = Track::new(&mut primary);
 
         track
@@ -227,22 +219,21 @@ mod tests {
 
     #[test]
     fn test_circular_dependency_failure() {
-        // let buffer_size = 2;
+        let buffer_size = 2;
+        let sample_rate = 48_000;
 
-        // let mut primary = Primary::new(buffer_size);
-        // let mut track_a = Track::new(0);
-        // let mut track_b = Track::new(1);
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut track_a = Track::new(&mut primary);
+        let mut track_b = Track::new(&mut primary);
 
-        // track_a.add_input(&track_b);
-        // track_b.add_input(&track_a);
+        track_a.add_input(&track_b);
+        track_b.add_input(&track_a);
 
-        // primary
-        //     .add_monitor(&track_a)
-        //     .add_monitor(&track_b);
+        primary.add_monitor(&track_a).add_monitor(&track_b);
 
-        // assert_eq!(
-        //     primary.sample(vec![&mut track_a, &mut track_b]),
-        //     Ok(vec![0.0, 0.0]),
-        // );
+        assert_eq!(
+            primary.sample(vec![&mut track_a, &mut track_b]),
+            Err(Error::CyclicDependencies),
+        );
     }
 }

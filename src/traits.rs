@@ -1,5 +1,11 @@
 use crate::signal::Signal;
+// use crate::stream::Point;
 use alloc::vec::Vec;
+use hashbrown::HashMap;
+
+// pub trait Process {
+//     fn process(&mut self) -> Point;
+// }
 
 /// To implement [`Source`] means something can be a source of sound,
 /// just like when sampling continous sources of sound into discrete slices.
@@ -16,9 +22,10 @@ use alloc::vec::Vec;
 pub trait Source {
     /// move one buffersize forward in discrete time
     fn sample(
-	&mut self, sources: Vec<(usize, &Signal)>,
-	buffer_size: usize,
-	sample_rate: usize,
+        &mut self,
+        sources: &HashMap<usize, Signal>,
+        buffer_size: usize,
+        sample_rate: usize,
     ) -> Signal;
 
     /// get id for instance, this is to identify this source when building the output
@@ -44,5 +51,5 @@ pub trait Tracker {
 /// Trait to implement conversion from a slice of sized types to a generic
 pub trait FromPoints<T: Sized, U> {
     /// Create new instance based on sequence of points
-    fn from_points(points: &[T]) -> U;
+    fn from_points(points: Vec<T>) -> U;
 }

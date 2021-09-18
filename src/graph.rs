@@ -24,13 +24,11 @@ fn visit(
         Some(Mark::Temporary) => Err(Error::NoDirectedAcyclicGraph),
         None => {
             marks.insert(node, Mark::Temporary);
-            match nodes.get(&node) {
-                Some(sources) => {
-                    for &node in sources {
-                        visit(nodes, marks, result, node)?;
-                    }
+
+            if let Some(sources) = nodes.get(&node) {
+                for &node in sources {
+                    visit(nodes, marks, result, node)?;
                 }
-                None => (),
             }
 
             marks.insert(node, Mark::Permanent);
@@ -45,12 +43,11 @@ pub fn topological_sort(nodes: HashMap<usize, Vec<usize>>) -> Result<Vec<usize>,
     let mut result = vec![];
 
     for (&node, _) in &nodes {
-        if let None = marks.get(&node) {
+        if marks.get(&node).is_none() {
             visit(&nodes, &mut marks, &mut result, node)?;
         }
     }
 
-    result.reverse();
     Ok(result)
 }
 
@@ -67,7 +64,7 @@ mod tests {
         graph.insert(3, vec![1]);
         graph.insert(4, vec![2]);
 
-        assert_eq!(topological_sort(graph), Ok(vec![0, 4, 2, 3, 1]));
+        assert_eq!(topological_sort(graph), Ok(vec![1, 3, 2, 4, 0]));
     }
 
     #[test]
