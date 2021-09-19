@@ -1,4 +1,3 @@
-use crate::mod_source::ModSource;
 use crate::signal::Signal;
 use crate::stream::Point;
 use crate::traits::{Source, Tracker};
@@ -10,13 +9,14 @@ use hashbrown::HashMap;
 #[derive(Debug, PartialEq, Clone)]
 pub struct Track {
     id: usize,
-    /// Inputs used for the main output of the track
     inputs: Vec<usize>,
-    /// Gain setting, -1.0 to 1.0 for -114dB and +6dB respectively
-    gain: ModSource,
-    /// Panning setting, -1.0 to 1.0 for -114dB and +6dB respectively
+    gain_cv: Option<usize>,
+    panning_cv: Option<usize>,
+    /// Gain setting in dBs
+    pub gain: f32,
+    /// Panning setting, -1.0 to 1.0 for -114dB and +6dB respectively.
     /// inverted to each channel
-    panning: ModSource,
+    pub panning: f32,
 }
 
 impl Track {
@@ -25,8 +25,10 @@ impl Track {
         Track {
             id: tracker.create_id(),
             inputs: vec![],
-            gain: ModSource::Owned(Signal::fixed(0.9)),
-            panning: ModSource::Owned(Signal::fixed(0.0)),
+            gain: 0.0,
+            gain_cv: None,
+            panning: 0.0,
+            panning_cv: None,
         }
     }
 
@@ -43,36 +45,20 @@ impl Track {
         self
     }
 
-    /// Set gain between `1.0` and `-1.0` by signal source
-    ///
-    /// `0.9` is set to unity gain, for `0.1` increment the level increases by 6dB.
-    /// For example setting a gain of `1.0` gives +6dB of amplification
-    /// and setting a gain of `-1.0` would result in -114dB
-    ///
-    pub fn set_gain(&mut self, cv: Signal) -> &mut Self {
-        self.gain = ModSource::Owned(cv);
-        self
-    }
-
     /// Set gain between `1.0` and `-1.0` by external source
     ///
     /// `0.9` is set to unity gain, for `0.1` increment the level increases by 6dB.
     /// For example setting a gain of `1.0` gives +6dB of amplification
     /// and setting a gain of `-1.0` would result in -114dB
     ///
-    pub fn set_external_gain(&mut self, source: &dyn Source) -> &mut Self {
-        self.gain = ModSource::External(source.get_id());
+    pub fn set_gain_cv(&mut self, cv: &dyn Source) -> &mut Self {
+        self.gain_cv = Some(cv.get_id());
         self
     }
 
-    /// Set left and right channel panning by signal source
-    ///
-    /// `0.0` is center resulting in no amplification,
-    /// `-1.0` is left channel +6dB, right channel -114dB,
-    /// `1.0` is left channel -114dB, right channel +6dB
-    ///
-    pub fn set_panning(&mut self, cv: Signal) -> &mut Self {
-        self.panning = ModSource::Owned(cv);
+    /// Remove gain cv source
+    pub fn unset_gain_cv(&mut self) -> &mut Self {
+        self.gain_cv = None;
         self
     }
 
@@ -82,8 +68,14 @@ impl Track {
     /// `-1.0` is left channel +6dB, right channel -114dB,
     /// `1.0` is left channel -114dB, right channel +6dB
     ///
-    pub fn set_external_panning(&mut self, source: &dyn Source) -> &mut Self {
-        self.panning = ModSource::External(source.get_id());
+    pub fn set_panning_cv(&mut self, cv: &dyn Source) -> &mut Self {
+        self.panning_cv = Some(cv.get_id());
+        self
+    }
+
+    /// Remove panning cv source
+    pub fn unset_panning_cv(&mut self) -> &mut Self {
+        self.panning_cv = None;
         self
     }
 }
@@ -95,29 +87,62 @@ impl Source for Track {
         buffer_size: usize,
         _sample_rate: usize,
     ) -> Signal {
-        let gain_stream = self
-            .gain
-            .get(&sources)
-            .unwrap_or_else(|| Signal::fixed(0.9))
-            .into_stream();
+        let inputs: Vec<&Signal> = self.inputs.iter().filter_map(|k| sources.get(k)).collect();
+        let signal = Signal::silence(buffer_size).mix_into(&inputs);
 
-        let panning_stream = self
-            .panning
-            .get(&sources)
-            .unwrap_or_else(|| Signal::fixed(0.0))
-            .into_stream();
+        if self.panning == 0.0
+            && self.gain == 0.0
+            && self.gain_cv.is_none()
+            && self.panning_cv.is_none()
+        {
+            return signal;
+        }
 
-        let sources: Vec<&Signal> = self.inputs.iter().filter_map(|k| sources.get(k)).collect();
-
-        Signal::silence(buffer_size)
-            .mix_into(&sources)
-            .map(|s| s.amplify_with_cv(&gain_stream, cv_to_db))
-            .map_to_stereo(|left, right| {
+        match (
+            self.gain_cv.and_then(|k| sources.get(&k)),
+            self.panning_cv.and_then(|k| sources.get(&k)),
+        ) {
+            (None, None) => signal.map_to_stereo(|left, right| {
                 (
-                    left.amplify_with_cv(&panning_stream, panning_to_db),
-                    right.amplify_with_cv(&panning_stream, |p| panning_to_db(-p)),
+                    left.amplify(panning_to_db(self.panning) + self.gain),
+                    right.amplify(panning_to_db(-self.panning) + self.gain),
                 )
-            })
+            }),
+            (Some(cv), None) => signal.map_to_stereo(|left, right| {
+                (
+                    left.amplify_with_cv(cv.get_stream(), |p| {
+                        cv_to_db(p) + panning_to_db(self.panning) + self.gain
+                    }),
+                    right.amplify_with_cv(cv.get_stream(), |p| {
+                        cv_to_db(p) + panning_to_db(-self.panning) + self.gain
+                    }),
+                )
+            }),
+            (None, Some(cv)) => signal.map_to_stereo(|left, right| {
+                (
+                    left.amplify_with_cv(cv.get_stream(), |p| {
+                        panning_to_db(p + self.panning) + self.gain
+                    }),
+                    right.amplify_with_cv(cv.get_stream(), |p| {
+                        panning_to_db(-p + -self.panning) + self.gain
+                    }),
+                )
+            }),
+            (Some(gain_cv), Some(panning_cv)) => signal.map_to_stereo(|left, right| {
+                (
+                    left
+			.amplify_with_cv(panning_cv.get_stream(), |p| {
+                            panning_to_db(p + self.panning)
+                        })
+                        .amplify_with_cv(gain_cv.get_stream(), |p| cv_to_db(p) + self.gain),
+                    right
+                        .amplify_with_cv(panning_cv.get_stream(), |p| {
+                            panning_to_db(-p + -self.panning)
+                        })
+                        .amplify_with_cv(gain_cv.get_stream(), |p| cv_to_db(p) + self.gain),
+                )
+            }),
+        }
     }
 
     fn get_id(&self) -> usize {
@@ -127,12 +152,12 @@ impl Source for Track {
     fn get_sources(&self) -> Vec<usize> {
         let mut sources = self.inputs.clone();
 
-        if let ModSource::External(key) = self.gain {
-            sources.push(key);
+        if let Some(id) = self.gain_cv {
+            sources.push(id);
         }
 
-        if let ModSource::External(key) = self.panning {
-            sources.push(key);
+        if let Some(id) = self.panning_cv {
+            sources.push(id);
         }
 
         sources
@@ -179,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn test_panning() {
+    fn test_gain() {
         let buffer_size = 4;
         let sample_rate = 48_000;
 
@@ -190,7 +215,7 @@ mod tests {
 
         lfo.frequency = 24_000.0;
         track.add_input(&clip);
-        track.set_external_gain(&lfo);
+        track.set_gain_cv(&lfo);
         primary.add_monitor(&track);
 
         assert_eq!(
@@ -206,6 +231,42 @@ mod tests {
                 0.001995262,
                 0.0,
                 0.0
+            ],
+        );
+    }
+
+    #[test]
+    fn test_panning() {
+        let buffer_size = 4;
+        let sample_rate = 48_000;
+
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.1, 0.1, 0.0]));
+        let mut lfo = Oscillator::new(&mut primary);
+        let mut track = Track::new(&mut primary);
+
+        lfo.frequency = 24_000.0;
+        lfo.amplitude = 1.0;
+        lfo.output_square(0.5);
+
+        track.add_input(&clip);
+        track.set_panning_cv(&lfo);
+
+        primary.add_monitor(&track);
+
+        assert_eq!(
+            primary
+                .sample(vec![&mut clip, &mut track, &mut lfo])
+                .unwrap(),
+            vec![
+                0.19952624,
+                0.00000019952631,
+                0.00000019952631,
+                0.19952624,
+                0.19952624,
+                0.00000019952631,
+                0.0,
+                0.0,
             ],
         );
     }

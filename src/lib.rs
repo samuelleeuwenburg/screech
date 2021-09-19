@@ -9,8 +9,6 @@ extern crate alloc;
 
 mod graph;
 
-mod mod_source;
-
 /// Common traits used throughout the library
 pub mod traits;
 
@@ -23,7 +21,7 @@ pub mod signal;
 /// General purpose oscillator
 pub mod oscillator;
 
-/// Slew rate limiter for [`signal::Signal`] 
+/// Slew rate limiter for [`signal::Signal`]
 pub mod slew;
 
 /// Most basic building block for non-generated sound

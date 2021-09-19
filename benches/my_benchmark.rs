@@ -4,9 +4,8 @@ use screech::primary::Primary;
 use screech::track::Track;
 use screech::traits::Source;
 
-fn primary(osc_count: usize, track_count: usize, buffer_count: usize, ms: usize) {
+fn primary(osc_count: usize, track_count: usize, buffer_size: usize) -> Vec<f32> {
     let sample_rate = 48_000;
-    let buffer_size = (sample_rate / 1000) * ms; // 10ms
 
     let mut primary = Primary::new(buffer_size, sample_rate);
 
@@ -27,28 +26,24 @@ fn primary(osc_count: usize, track_count: usize, buffer_count: usize, ms: usize)
         tracks.push(track);
     }
 
-    for _ in 0..buffer_count {
-        let mut sources: Vec<&mut dyn Source> = vec![];
-        let mut tracks: Vec<&mut dyn Source> =
-            tracks.iter_mut().map(|t| t as &mut dyn Source).collect();
-        let mut oscs: Vec<&mut dyn Source> =
-            oscs.iter_mut().map(|o| o as &mut dyn Source).collect();
+    let mut sources: Vec<&mut dyn Source> = vec![];
+    let mut tracks: Vec<&mut dyn Source> =
+        tracks.iter_mut().map(|t| t as &mut dyn Source).collect();
+    let mut oscs: Vec<&mut dyn Source> = oscs.iter_mut().map(|o| o as &mut dyn Source).collect();
 
-        sources.append(&mut tracks);
-        sources.append(&mut oscs);
+    sources.append(&mut tracks);
+    sources.append(&mut oscs);
 
-        primary.sample(sources).unwrap();
-    }
+    primary.sample(sources).unwrap()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("semi complex example of screech usage", |b| {
+    c.bench_function("sampling oscillators across multiple tracks", |b| {
         b.iter(|| {
             primary(
-                black_box(100), // # oscillators
-                black_box(10),  // times # tracks
-                black_box(1),   // # buffers
-                black_box(100), // times # buffer size in ms
+                black_box(10),           // # oscillators
+                black_box(100),          // times # tracks
+                black_box(48_000 / 100), // buffer size 10ms
             )
         })
     });

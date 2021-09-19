@@ -232,14 +232,14 @@ impl Signal {
     pub fn mix_into(self, signals: &[&Signal]) -> Self {
         match self {
             Signal::Mono(stream) => {
-                let streams: Vec<&Stream> = signals.iter().map(|s| s.get_mono_stream()).collect();
+                let streams: Vec<&Stream> = signals.iter().map(|s| s.get_stream()).collect();
                 Signal::Mono(stream.mix_into(&streams))
             }
             Signal::Stereo(left, right) => {
-                let lefts: Vec<&Stream> = signals.iter().map(|s| s.get_mono_stream()).collect();
+                let lefts: Vec<&Stream> = signals.iter().map(|s| s.get_stream()).collect();
                 let rights: Vec<&Stream> = signals
                     .iter()
-                    .map(|s| s.get_right_stream().unwrap_or(s.get_mono_stream()))
+                    .map(|s| s.get_right_stream().unwrap_or(s.get_stream()))
                     .collect();
 
                 Signal::Stereo(left.mix_into(&lefts), right.mix_into(&rights))
@@ -279,13 +279,13 @@ impl Signal {
         let mut is_mono = true;
 
         for s in signals {
-            lefts.push(s.get_mono_stream());
+            lefts.push(s.get_stream());
             match s.get_right_stream() {
                 Some(stream) => {
                     is_mono = false;
                     rights.push(stream);
                 }
-                None => rights.push(s.get_mono_stream()),
+                None => rights.push(s.get_stream()),
             }
         }
 
@@ -443,7 +443,7 @@ impl Signal {
 
     /// Get a reference of the inner stream,
     /// or the left stream if it is a stereo signal
-    pub fn get_mono_stream(&self) -> &Stream {
+    pub fn get_stream(&self) -> &Stream {
         match self {
             Signal::Mono(stream) => stream,
             Signal::Stereo(left, _) => left,
