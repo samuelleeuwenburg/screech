@@ -4,21 +4,21 @@ use crate::stream::Point;
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 
 /// ```
 /// use screech::primary::Primary;
 /// use screech::track::Track;
 /// use screech::clip::Clip;
-/// use screech::signal::Signal;
+/// use screech::stream::Stream;
 /// use screech::traits::{FromPoints, Source};
 ///
 /// let buffer_size = 2;
 /// let sample_rate = 48_000;
 ///
 /// let mut primary = Primary::new(buffer_size, sample_rate);
-/// let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.2, 0.2, 0.1]));
-/// let mut clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
+/// let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
+/// let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
 ///
 /// track.add_input(&clip_a);
@@ -45,6 +45,13 @@ pub struct Primary {
     sample_rate: usize,
     monitored_sources: Vec<usize>,
     id_position: usize,
+    signals: FxHashMap<usize, Signal>,
+    output_mode: OutputMode,
+}
+
+enum OutputMode {
+    Mono,
+    Stereo,
 }
 
 /// Error type for failure to execute [`Primary::sample`]
@@ -73,6 +80,8 @@ impl Primary {
             sample_rate,
             monitored_sources: vec![],
             id_position: 0,
+            signals: FxHashMap::default(),
+            output_mode: OutputMode::Stereo,
         }
     }
 
@@ -89,11 +98,19 @@ impl Primary {
         self
     }
 
-    /// attempt to sample sources into a single output
-    pub fn sample(&self, unmapped_sources: Vec<&mut dyn Source>) -> Result<Vec<Point>, Error> {
-        let mut sources = HashMap::<usize, &mut dyn Source>::new();
-        let mut signals = HashMap::<usize, Signal>::new();
-        let mut graph = HashMap::<usize, Vec<usize>>::new();
+    pub fn output_mono(&mut self) -> &mut Self {
+        self.output_mode = OutputMode::Mono;
+        self
+    }
+
+    pub fn output_stereo(&mut self) -> &mut Self {
+        self.output_mode = OutputMode::Stereo;
+        self
+    }
+
+    pub fn sample(&mut self, unmapped_sources: Vec<&mut dyn Source>) -> Result<Vec<Point>, Error> {
+        let mut sources = FxHashMap::<usize, &mut dyn Source>::default();
+        let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
         for source in unmapped_sources {
             graph.insert(source.get_id(), source.get_sources());
@@ -104,25 +121,49 @@ impl Primary {
             GraphError::NoDirectedAcyclicGraph => Error::CyclicDependencies,
         })?;
 
+        let mut sorted_sources = vec![];
+
         for key in sorted {
-            // build signals
-            let source = sources.get_mut(&key).ok_or(Error::MissingDependency)?;
-            let signal = source.sample(&signals, self.buffer_size, self.sample_rate);
-            signals.insert(key, signal);
+            let source = sources.remove(&key).ok_or(Error::MissingDependency)?;
+            sorted_sources.push(source);
         }
 
-        // mix result based on monitored sources
-        let mut monitored_signals = vec![];
+        let mut final_stream = Vec::with_capacity(self.buffer_size);
+        let sample_rate = self.sample_rate;
 
-        for key in &self.monitored_sources {
-            let s = signals.get(&key).ok_or(Error::MissingMonitor)?;
-            monitored_signals.push(s);
+        for _ in 0..self.buffer_size {
+            for source in sorted_sources.iter_mut() {
+                source.sample(self, sample_rate);
+            }
+
+            let signals: Vec<&Signal> = self
+                .monitored_sources
+                .iter()
+                .filter_map(|&k| self.get_signal(k))
+                .collect();
+
+            final_stream.push(Signal::mix(&signals));
         }
 
-        Signal::mix(&monitored_signals)
-            .to_stereo()
-            .get_interleaved_points()
-            .map_err(|_| Error::UnableToBuildFinalStream)
+        let mut output = Vec::with_capacity(self.buffer_size * 2);
+
+        for signal in final_stream {
+            match self.output_mode {
+                OutputMode::Mono => {
+                    let point = signal.sum_points();
+                    output.push(point);
+                }
+                OutputMode::Stereo => {
+                    let left = signal.get_point();
+                    let right = signal.get_right_point().unwrap_or(signal.get_point());
+
+                    output.push(*left);
+                    output.push(*right);
+                }
+            }
+        }
+
+        Ok(output)
     }
 }
 
@@ -133,6 +174,14 @@ impl Tracker for Primary {
         self.id_position += 1;
         id
     }
+
+    fn get_signal(&self, id: usize) -> Option<&Signal> {
+        self.signals.get(&id)
+    }
+
+    fn set_signal(&mut self, id: usize, signal: Signal) {
+        self.signals.insert(id, signal);
+    }
 }
 
 #[cfg(test)]
@@ -140,6 +189,7 @@ mod tests {
     use super::*;
     use crate::clip::Clip;
     use crate::signal::Signal;
+    use crate::stream::Stream;
     use crate::track::Track;
     use crate::traits::FromPoints;
 
@@ -150,13 +200,13 @@ mod tests {
 
         let mut primary = Primary::new(buffer_size, sample_rate);
 
-        let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1]));
-        let mut clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.2]));
-        let mut clip_c = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.3]));
-        let mut clip_d = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.0, 0.4]));
+        let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1]));
+        let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.2]));
+        let mut clip_c = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.3]));
+        let mut clip_d = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.0, 0.4]));
         let mut clip_e = Clip::new(
             &mut primary,
-            Signal::from_points(vec![0.0, 0.0, 0.0, 0.0, 0.5]),
+            Stream::from_points(vec![0.0, 0.0, 0.0, 0.0, 0.5]),
         );
 
         let mut track_a = Track::new(&mut primary);
@@ -199,9 +249,9 @@ mod tests {
         let sample_rate = 48_000;
 
         let mut primary = Primary::new(buffer_size, sample_rate);
-        let mut clip_a = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.2, 0.2, 0.1]));
-        let clip_b = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
-        let clip_c = Clip::new(&mut primary, Signal::from_points(vec![0.0, 0.0, 0.1, 0.3]));
+        let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
+        let clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
+        let clip_c = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
         let mut track = Track::new(&mut primary);
 
         track

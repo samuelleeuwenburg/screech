@@ -1,6 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -14,8 +14,8 @@ pub enum Mark {
 }
 
 fn visit(
-    nodes: &HashMap<usize, Vec<usize>>,
-    marks: &mut HashMap<usize, Mark>,
+    nodes: &FxHashMap<usize, Vec<usize>>,
+    marks: &mut FxHashMap<usize, Mark>,
     result: &mut Vec<usize>,
     node: usize,
 ) -> Result<(), Error> {
@@ -38,8 +38,8 @@ fn visit(
     }
 }
 
-pub fn topological_sort(nodes: HashMap<usize, Vec<usize>>) -> Result<Vec<usize>, Error> {
-    let mut marks = HashMap::<usize, Mark>::new();
+pub fn topological_sort(nodes: FxHashMap<usize, Vec<usize>>) -> Result<Vec<usize>, Error> {
+    let mut marks = FxHashMap::<usize, Mark>::default();
     let mut result = vec![];
 
     for (&node, _) in &nodes {
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_topological_sort() {
-        let mut graph = HashMap::<usize, Vec<usize>>::new();
+        let mut graph = FxHashMap::<usize, Vec<usize>>::default();
         graph.insert(0, vec![2, 4, 1]);
         graph.insert(1, vec![]);
         graph.insert(2, vec![3]);
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_topological_sort_cyclic_graph() {
-        let mut graph = HashMap::<usize, Vec<usize>>::new();
+        let mut graph = FxHashMap::<usize, Vec<usize>>::default();
         graph.insert(0, vec![2, 4, 1]);
         graph.insert(1, vec![]);
         graph.insert(2, vec![3]);

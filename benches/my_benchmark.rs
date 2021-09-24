@@ -41,9 +41,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("sampling oscillators across multiple tracks", |b| {
         b.iter(|| {
             primary(
-                black_box(10),           // # oscillators
-                black_box(100),          // times # tracks
-                black_box(48_000 / 100), // buffer size 10ms
+                black_box(100), // # oscillators
+                black_box(10),  // times # tracks
+                black_box(480), // buffer size 10ms
             )
         })
     });

@@ -7,18 +7,20 @@ use core::cell::Cell;
 /// Limit the speed of change by voltage per millisecond
 ///
 /// ```
-/// use screech::traits::FromPoints;
 /// use screech::slew::Slew;
 /// use screech::signal::Signal;
 ///
 /// // set a sample rate of 4000 samples per second
 /// let sample_rate = 4000;
-/// let signal = Signal::from_points(vec![1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0]);
+/// let signals = Signal::from_points(vec![1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0]);
 /// // adjust the speed of the slew rate to be 1.0 "volts" per millisecond
 /// let mut slew = Slew::new(1.0);
 ///
 /// assert_eq!(
-///     slew.process(sample_rate, signal).into_stream().get_points().unwrap(),
+///     signals
+///         .into_iter()
+///         .map(|s| *slew.process(sample_rate, s).get_point())
+///         .collect::<Vec<f32>>(),
 ///     &[0.25, 0.0, -0.25, 0.0, 0.25, 0.0, -0.25, 0.0, 0.0],
 /// );
 /// ```
@@ -68,21 +70,17 @@ impl Slew {
     /// Process a [`crate::signal::Signal`] through the slew rate limiter
     pub fn process(&mut self, sample_rate: usize, signal: Signal) -> Signal {
         signal.map_stereo(
-            |stream| {
-                stream.map(|p| {
-                    let point = self.left.get();
-                    let new_value = self.get_new_value(sample_rate, point, p);
-                    self.left.set(new_value);
-                    new_value
-                })
+            |p| {
+                let point = self.left.get();
+                let new_value = self.get_new_value(sample_rate, point, p);
+                self.left.set(new_value);
+                new_value
             },
-            |stream| {
-                stream.map(|p| {
-                    let point = self.right.get();
-                    let new_value = self.get_new_value(sample_rate, point, p);
-                    self.left.set(new_value);
-                    new_value
-                })
+            |p| {
+                let point = self.right.get();
+                let new_value = self.get_new_value(sample_rate, point, p);
+                self.left.set(new_value);
+                new_value
             },
         )
     }
@@ -94,18 +92,19 @@ mod tests {
     use crate::signal::Signal;
     use crate::traits::FromPoints;
     use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_slew_up() {
         let sample_rate = 5000;
-        let signal = Signal::from_points(vec![0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+        let signals = Signal::from_points(vec![0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
         let mut slew = Slew::new(1.0);
 
         assert_eq!(
-            slew.process(sample_rate, signal)
-                .into_stream()
-                .get_points()
-                .unwrap(),
+            signals
+                .into_iter()
+                .map(|s| *slew.process(sample_rate, s).get_point())
+                .collect::<Vec<f32>>(),
             &[0.0, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.0, 1.0],
         );
     }
@@ -113,14 +112,14 @@ mod tests {
     #[test]
     fn test_slew_down() {
         let sample_rate = 5000;
-        let signal = Signal::from_points(vec![0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
+        let signals = Signal::from_points(vec![0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
         let mut slew = Slew::new(1.0);
 
         assert_eq!(
-            slew.process(sample_rate, signal)
-                .into_stream()
-                .get_points()
-                .unwrap(),
+            signals
+                .into_iter()
+                .map(|s| *slew.process(sample_rate, s).get_point())
+                .collect::<Vec<f32>>(),
             &[0.0, 0.0, -0.2, -0.4, -0.6, -0.8, -1.0, -1.0, -1.0],
         );
     }
@@ -128,14 +127,14 @@ mod tests {
     #[test]
     fn test_slew_up_down() {
         let sample_rate = 4000;
-        let signal = Signal::from_points(vec![1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0]);
+        let signals = Signal::from_points(vec![1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0]);
         let mut slew = Slew::new(1.0);
 
         assert_eq!(
-            slew.process(sample_rate, signal)
-                .into_stream()
-                .get_points()
-                .unwrap(),
+            signals
+                .into_iter()
+                .map(|s| *slew.process(sample_rate, s).get_point())
+                .collect::<Vec<f32>>(),
             &[0.25, 0.0, -0.25, 0.0, 0.25, 0.0, -0.25, 0.0, 0.0],
         );
     }

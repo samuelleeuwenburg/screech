@@ -3,7 +3,6 @@ use crate::stream::Point;
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
-use hashbrown::HashMap;
 
 /// Standard track with panning and volume control
 #[derive(Debug, PartialEq, Clone)]
@@ -81,68 +80,18 @@ impl Track {
 }
 
 impl Source for Track {
-    fn sample(
-        &mut self,
-        sources: &HashMap<usize, Signal>,
-        buffer_size: usize,
-        _sample_rate: usize,
-    ) -> Signal {
-        let inputs: Vec<&Signal> = self.inputs.iter().filter_map(|k| sources.get(k)).collect();
-        let signal = Signal::silence(buffer_size).mix_into(&inputs);
+    fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
+        //@TODO: implement panning and gain
 
-        if self.panning == 0.0
-            && self.gain == 0.0
-            && self.gain_cv.is_none()
-            && self.panning_cv.is_none()
-        {
-            return signal;
-        }
+        let inputs: Vec<&Signal> = self
+            .inputs
+            .iter()
+            .filter_map(|&k| sources.get_signal(k))
+            .collect();
 
-        match (
-            self.gain_cv.and_then(|k| sources.get(&k)),
-            self.panning_cv.and_then(|k| sources.get(&k)),
-        ) {
-            (None, None) => signal.map_to_stereo(|left, right| {
-                (
-                    left.amplify(panning_to_db(self.panning) + self.gain),
-                    right.amplify(panning_to_db(-self.panning) + self.gain),
-                )
-            }),
-            (Some(cv), None) => signal.map_to_stereo(|left, right| {
-                (
-                    left.amplify_with_cv(cv.get_stream(), |p| {
-                        cv_to_db(p) + panning_to_db(self.panning) + self.gain
-                    }),
-                    right.amplify_with_cv(cv.get_stream(), |p| {
-                        cv_to_db(p) + panning_to_db(-self.panning) + self.gain
-                    }),
-                )
-            }),
-            (None, Some(cv)) => signal.map_to_stereo(|left, right| {
-                (
-                    left.amplify_with_cv(cv.get_stream(), |p| {
-                        panning_to_db(p + self.panning) + self.gain
-                    }),
-                    right.amplify_with_cv(cv.get_stream(), |p| {
-                        panning_to_db(-p + -self.panning) + self.gain
-                    }),
-                )
-            }),
-            (Some(gain_cv), Some(panning_cv)) => signal.map_to_stereo(|left, right| {
-                (
-                    left
-			.amplify_with_cv(panning_cv.get_stream(), |p| {
-                            panning_to_db(p + self.panning)
-                        })
-                        .amplify_with_cv(gain_cv.get_stream(), |p| cv_to_db(p) + self.gain),
-                    right
-                        .amplify_with_cv(panning_cv.get_stream(), |p| {
-                            panning_to_db(-p + -self.panning)
-                        })
-                        .amplify_with_cv(gain_cv.get_stream(), |p| cv_to_db(p) + self.gain),
-                )
-            }),
-        }
+        let signal = Signal::silence().mix_into(&inputs);
+
+        sources.set_signal(self.id, signal);
     }
 
     fn get_id(&self) -> usize {
@@ -185,6 +134,7 @@ mod tests {
     use crate::oscillator::Oscillator;
     use crate::primary::Primary;
     use crate::signal::Signal;
+    use crate::stream::Stream;
     use crate::traits::FromPoints;
 
     #[test]
@@ -204,70 +154,92 @@ mod tests {
     }
 
     #[test]
-    fn test_gain() {
+    fn test_mix() {
         let buffer_size = 4;
         let sample_rate = 48_000;
 
         let mut primary = Primary::new(buffer_size, sample_rate);
-        let mut clip = Clip::new(&mut primary, Signal::from_points(vec![1.0, 1.0, 1.0, 0.0]));
-        let mut lfo = Oscillator::new(&mut primary);
+        let mut clip1 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]));
+        let mut clip2 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.0, 0.1, 0.0]));
         let mut track = Track::new(&mut primary);
 
-        lfo.frequency = 24_000.0;
-        track.add_input(&clip);
-        track.set_gain_cv(&lfo);
+        track.add_input(&clip1);
+        track.add_input(&clip2);
         primary.add_monitor(&track);
 
         assert_eq!(
             primary
-                .sample(vec![&mut clip, &mut track, &mut lfo])
+                .sample(vec![&mut clip1, &mut clip2, &mut track])
                 .unwrap(),
-            vec![
-                0.001995262,
-                0.001995262,
-                0.063095726,
-                0.063095726,
-                0.001995262,
-                0.001995262,
-                0.0,
-                0.0
-            ],
+            vec![0.2, 0.2, 0.2, 0.2, 0.4, 0.4, 0.4, 0.4],
         );
     }
 
-    #[test]
-    fn test_panning() {
-        let buffer_size = 4;
-        let sample_rate = 48_000;
+    // #[test]
+    // fn test_gain() {
+    //     let buffer_size = 4;
+    //     let sample_rate = 48_000;
 
-        let mut primary = Primary::new(buffer_size, sample_rate);
-        let mut clip = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.1, 0.1, 0.0]));
-        let mut lfo = Oscillator::new(&mut primary);
-        let mut track = Track::new(&mut primary);
+    //     let mut primary = Primary::new(buffer_size, sample_rate);
+    //     let mut clip = Clip::new(&mut primary, Signal::from_points(vec![1.0, 1.0, 1.0, 0.0]));
+    //     let mut lfo = Oscillator::new(&mut primary);
+    //     let mut track = Track::new(&mut primary);
 
-        lfo.frequency = 24_000.0;
-        lfo.amplitude = 1.0;
-        lfo.output_square(0.5);
+    //     lfo.frequency = 24_000.0;
+    //     track.add_input(&clip);
+    //     track.set_gain_cv(&lfo);
+    //     primary.add_monitor(&track);
 
-        track.add_input(&clip);
-        track.set_panning_cv(&lfo);
+    //     assert_eq!(
+    //         primary
+    //             .sample(vec![&mut clip, &mut track, &mut lfo])
+    //             .unwrap(),
+    //         vec![
+    //             0.001995262,
+    //             0.001995262,
+    //             0.063095726,
+    //             0.063095726,
+    //             0.001995262,
+    //             0.001995262,
+    //             0.0,
+    //             0.0
+    //         ],
+    //     );
+    // }
 
-        primary.add_monitor(&track);
+    // #[test]
+    // fn test_panning() {
+    //     let buffer_size = 4;
+    //     let sample_rate = 48_000;
 
-        assert_eq!(
-            primary
-                .sample(vec![&mut clip, &mut track, &mut lfo])
-                .unwrap(),
-            vec![
-                0.19952624,
-                0.00000019952631,
-                0.00000019952631,
-                0.19952624,
-                0.19952624,
-                0.00000019952631,
-                0.0,
-                0.0,
-            ],
-        );
-    }
+    //     let mut primary = Primary::new(buffer_size, sample_rate);
+    //     let mut clip = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.1, 0.1, 0.0]));
+    //     let mut lfo = Oscillator::new(&mut primary);
+    //     let mut track = Track::new(&mut primary);
+
+    //     lfo.frequency = 24_000.0;
+    //     lfo.amplitude = 1.0;
+    //     lfo.output_square(0.5);
+
+    //     track.add_input(&clip);
+    //     track.set_panning_cv(&lfo);
+
+    //     primary.add_monitor(&track);
+
+    //     assert_eq!(
+    //         primary
+    //             .sample(vec![&mut clip, &mut track, &mut lfo])
+    //             .unwrap(),
+    //         vec![
+    //             0.19952624,
+    //             0.00000019952631,
+    //             0.00000019952631,
+    //             0.19952624,
+    //             0.19952624,
+    //             0.00000019952631,
+    //             0.0,
+    //             0.0,
+    //         ],
+    //     );
+    // }
 }

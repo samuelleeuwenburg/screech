@@ -1,9 +1,8 @@
 use crate::signal::Signal;
 use crate::stream::Point;
-use crate::traits::{FromPoints, Source, Tracker};
+use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
-use hashbrown::HashMap;
 
 /// Basic saw ramp oscillator.
 ///
@@ -163,52 +162,42 @@ impl Oscillator {
 }
 
 impl Source for Oscillator {
-    fn sample(
-        &mut self,
-        _sources: &HashMap<usize, Signal>,
-        buffer_size: usize,
-        sample_rate: usize,
-    ) -> Signal {
-        let mut points = vec![];
-
+    // fn sample(&mut self, _sources: &FxHashMap<usize, Signal>, sample_rate: usize) -> Signal {
+    fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize) {
         // peak to peak conversion of amplitude
         let peak_to_peak = self.amplitude * 2.0;
 
         let increase_per_sample = peak_to_peak / sample_rate as f32 * self.frequency;
 
-        for _ in 0..buffer_size {
-            let point = match self.waveshape {
-                Waveshape::Saw => self.value,
-                Waveshape::Square(duty_cycle) => {
-                    if self.value > self.amplitude * duty_cycle - self.amplitude / 2.0 {
-                        -self.amplitude
-                    } else {
-                        self.amplitude
-                    }
+        let point = match self.waveshape {
+            Waveshape::Saw => self.value,
+            Waveshape::Square(duty_cycle) => {
+                if self.value > self.amplitude * duty_cycle - self.amplitude / 2.0 {
+                    -self.amplitude
+                } else {
+                    self.amplitude
                 }
-                Waveshape::Triangle => {
-                    let triangle = if self.value > 0.0 {
-                        self.value
-                    } else {
-                        // invert bottom half
-                        -self.value
-                    };
-
-                    // normalize for amplitude
-                    (triangle * 2.0) - self.amplitude
-                }
-            };
-
-            points.push(point);
-
-            self.value += increase_per_sample;
-
-            if self.value > peak_to_peak / 2.0 {
-                self.value -= peak_to_peak;
             }
+            Waveshape::Triangle => {
+                let triangle = if self.value > 0.0 {
+                    self.value
+                } else {
+                    // invert bottom half
+                    -self.value
+                };
+
+                // normalize for amplitude
+                (triangle * 2.0) - self.amplitude
+            }
+        };
+
+        self.value += increase_per_sample;
+
+        if self.value > peak_to_peak / 2.0 {
+            self.value -= peak_to_peak;
         }
 
-        Signal::from_points(points)
+        sources.set_signal(self.id, Signal::point(point));
     }
 
     fn get_id(&self) -> usize {
