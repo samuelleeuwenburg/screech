@@ -1,5 +1,4 @@
-use crate::signal::Signal;
-use crate::stream::Point;
+use crate::core::{Point, Signal};
 use core::cell::Cell;
 
 /// Signal slew rate limiter
@@ -7,8 +6,8 @@ use core::cell::Cell;
 /// Limit the speed of change by voltage per millisecond
 ///
 /// ```
-/// use screech::slew::Slew;
-/// use screech::signal::Signal;
+/// use screech::core::Signal;
+/// use screech::basic::Slew;
 ///
 /// // set a sample rate of 4000 samples per second
 /// let sample_rate = 4000;
@@ -67,7 +66,7 @@ impl Slew {
         old_value + limited_rise
     }
 
-    /// Process a [`crate::signal::Signal`] through the slew rate limiter
+    /// Process a [`crate::core::Signal`] through the slew rate limiter
     pub fn process(&mut self, sample_rate: usize, signal: Signal) -> Signal {
         signal.map_stereo(
             |p| {
@@ -89,8 +88,7 @@ impl Slew {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::Signal;
-    use crate::traits::FromPoints;
+    use crate::core::Signal;
     use alloc::vec;
     use alloc::vec::Vec;
 

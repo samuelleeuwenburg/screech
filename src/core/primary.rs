@@ -1,17 +1,17 @@
-use crate::graph::{topological_sort, Error as GraphError};
-use crate::signal::Signal;
-use crate::stream::Point;
+use crate::core::graph::{topological_sort, Error as GraphError};
+use crate::core::{BasicTracker, Point, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 use rustc_hash::FxHashMap;
 
+/// Main helper struct to render and manage relations between [`crate::traits::Source`] types.
+/// Also implements [`crate::traits::Tracker`]
+///
 /// ```
-/// use screech::primary::Primary;
-/// use screech::track::Track;
-/// use screech::clip::Clip;
-/// use screech::stream::Stream;
 /// use screech::traits::{FromPoints, Source};
+/// use screech::core::{Primary, Stream};
+/// use screech::basic::{Clip, Track};
 ///
 /// let buffer_size = 2;
 /// let sample_rate = 48_000;
@@ -44,9 +44,8 @@ pub struct Primary {
     buffer_size: usize,
     sample_rate: usize,
     monitored_sources: Vec<usize>,
-    id_position: usize,
-    signals: FxHashMap<usize, Signal>,
     output_mode: OutputMode,
+    tracker: BasicTracker,
 }
 
 enum OutputMode {
@@ -67,9 +66,6 @@ pub enum Error {
     /// A source has a dependency in its [`crate::traits::Source::get_sources`]
     /// which is missing from the sources list
     MissingDependency,
-    /// Unable to build final stereo stream
-    /// see [`crate::signal::Signal::get_interleaved_points`] for more information
-    UnableToBuildFinalStream,
 }
 
 impl Primary {
@@ -79,9 +75,8 @@ impl Primary {
             buffer_size,
             sample_rate,
             monitored_sources: vec![],
-            id_position: 0,
-            signals: FxHashMap::default(),
             output_mode: OutputMode::Stereo,
+            tracker: BasicTracker::new(),
         }
     }
 
@@ -98,16 +93,19 @@ impl Primary {
         self
     }
 
+    /// Output a mono signal
     pub fn output_mono(&mut self) -> &mut Self {
         self.output_mode = OutputMode::Mono;
         self
     }
 
+    /// Output an interleaved stereo signal
     pub fn output_stereo(&mut self) -> &mut Self {
         self.output_mode = OutputMode::Stereo;
         self
     }
 
+    /// Sample multiple sources based on their dependencies into a single output vec
     pub fn sample(&mut self, unmapped_sources: Vec<&mut dyn Source>) -> Result<Vec<Point>, Error> {
         let mut sources = FxHashMap::<usize, &mut dyn Source>::default();
         let mut graph = FxHashMap::<usize, Vec<usize>>::default();
@@ -169,28 +167,23 @@ impl Primary {
 
 impl Tracker for Primary {
     fn create_id(&mut self) -> usize {
-        // @TODO: this is pretty naive, best keep track of ids somewhere in a vec
-        let id = self.id_position;
-        self.id_position += 1;
-        id
+        self.tracker.create_id()
     }
 
     fn get_signal(&self, id: usize) -> Option<&Signal> {
-        self.signals.get(&id)
+        self.tracker.get_signal(id)
     }
 
     fn set_signal(&mut self, id: usize, signal: Signal) {
-        self.signals.insert(id, signal);
+        self.tracker.set_signal(id, signal);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clip::Clip;
-    use crate::signal::Signal;
-    use crate::stream::Stream;
-    use crate::track::Track;
+    use crate::basic::{Clip, Track};
+    use crate::core::Stream;
     use crate::traits::FromPoints;
 
     #[test]
@@ -226,6 +219,7 @@ mod tests {
         track_d.add_input(&track_c);
 
         primary.add_monitor(&track_d);
+        primary.output_mono();
 
         assert_eq!(
             primary.sample(vec![
@@ -239,7 +233,7 @@ mod tests {
                 &mut track_c,
                 &mut track_d,
             ]),
-            Ok(vec![0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5, 0.5,]),
+            Ok(vec![0.1, 0.2, 0.3, 0.4, 0.5]),
         );
     }
 

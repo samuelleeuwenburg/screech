@@ -1,4 +1,4 @@
-use crate::stream::Point;
+use crate::core::Point;
 use alloc::vec::Vec;
 
 /// Most fundamental type for carrying signals throughout the library.
@@ -12,20 +12,11 @@ pub enum Signal {
     Stereo(Point, Point),
 }
 
-/// Error enum for signal methods
-#[derive(Debug)]
-pub enum SignalErr {
-    /// Unable to get point for [`Stream`] using [`Stream::get_point`]
-    UnableToGetPointForStream,
-    /// It is impossible to build up a proper audio signal from a fixed point Signal
-    UnableToBuildStreamFromFixedPointSignal,
-}
-
 impl Signal {
     /// Generate a silent signal
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// assert_eq!(Signal::silence(), Signal::Mono(0.0));
     /// ```
@@ -36,7 +27,7 @@ impl Signal {
     /// Generate a mono signal from a point
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// assert_eq!(Signal::point(0.0), Signal::Mono(0.0));
     /// ```
@@ -47,7 +38,7 @@ impl Signal {
     /// Generate a stereo signal from two points
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// assert_eq!(Signal::points(0.1, 0.2), Signal::Stereo(0.1, 0.2));
     /// ```
@@ -59,7 +50,7 @@ impl Signal {
     /// technically this is not a real map, since you can only manipulate the point to another point
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let mono = Signal::point(0.1).map(|p| p * 2.0);
     /// let stereo = Signal::points(0.1, 0.2).map(|p| p * 2.0);
@@ -81,7 +72,7 @@ impl Signal {
     /// When given a mono channel it applies the transformation only to the left channel
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let signal = Signal::points(0.1, 0.2)
     ///     .map_stereo(|left| left * 2.0, |right| right / 2.0);
@@ -103,7 +94,7 @@ impl Signal {
     /// When given a mono channel it converts it to stereo by cloning left onto right
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let signal = Signal::point(0.2)
     ///     .map_to_stereo(|left, right| (left * 2.0, right / 2.0));
@@ -127,11 +118,11 @@ impl Signal {
     /// ***note*** on mono channels will sum the right channel to the left
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let signals = [
     ///     &Signal::point(0.1),
-    ///     &Signal::points(0.2, 0.3),
+    ///     &Signal::points(0.4, 0.6),
     /// ];
     ///
     /// let signal = Signal::point(0.4).mix_into(&signals);
@@ -161,7 +152,7 @@ impl Signal {
     /// putting mono signals across both channels
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let signal = Signal::mix(&[
     ///     &Signal::point(0.1),
@@ -198,7 +189,7 @@ impl Signal {
     /// using [`Signal::sum_to_mono`] for stereo to mono conversion
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let mono_signal = Signal::silence();
     /// let stereo_signal = Signal::silence().to_stereo();
@@ -216,7 +207,7 @@ impl Signal {
     /// Returns true if the enum instance is of [`Signal::Mono`] type
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let mono_signal = Signal::silence();
     /// let stereo_signal = Signal::silence().to_stereo();
@@ -234,7 +225,7 @@ impl Signal {
     /// Returns true if the enum instance is of [`Signal::Stereo`] type
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let mono_signal = Signal::silence();
     /// let stereo_signal = Signal::silence().to_stereo();
@@ -250,12 +241,10 @@ impl Signal {
     }
 
     /// Convert a stereo point to mono by summing the left and right channel
-    /// using [`Stream::mix`]
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::signal::Signal;
-    /// use screech::stream::Stream;
+    /// use screech::core::{Signal, Stream};
     ///
     /// let stereo_signal = Signal::Stereo(0.1, -0.1);
     ///
@@ -274,7 +263,7 @@ impl Signal {
     /// Convert a stereo point to mono by ditching the right channel
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let stereo_signal = Signal::points(0.1, 0.2);
     ///
@@ -293,7 +282,7 @@ impl Signal {
     /// Convert a mono stream to stereo by cloning the signal to both channels
     ///
     /// ```
-    /// use screech::signal::Signal;
+    /// use screech::core::Signal;
     ///
     /// let mono_signal = Signal::point(0.1);
     ///
@@ -318,11 +307,11 @@ impl Signal {
         }
     }
 
-    /// Get the inner point if mono, and sum left and right together for stereo signals
+    /// Get the inner point if mono, and sum left and right together (after -3dB) for stereo signals
     pub fn sum_points(&self) -> Point {
         match self {
             Signal::Mono(point) => *point,
-            Signal::Stereo(left, right) => left + right,
+            Signal::Stereo(left, right) => (left + right) / 2.0,
         }
     }
 
@@ -334,6 +323,7 @@ impl Signal {
         }
     }
 
+    /// Utility function to easily construct a vec of mono signals from a `Vec<Point>`
     pub fn from_points(points: Vec<Point>) -> Vec<Signal> {
         points.iter().map(|p| Signal::point(*p)).collect()
     }

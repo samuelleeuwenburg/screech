@@ -1,5 +1,5 @@
-use crate::signal::Signal;
-use crate::stream::Point;
+use crate::core::point::{amplify, Point};
+use crate::core::Signal;
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -77,20 +77,47 @@ impl Track {
         self.panning_cv = None;
         self
     }
+
+    /// Render the next real time signal
+    pub fn step(&mut self, inputs: &[&Signal], gain: f32, panning: f32) -> Signal {
+        Signal::silence()
+            .mix_into(&inputs)
+            .map_to_stereo(|left, right| {
+                (
+                    amplify(
+                        left,
+                        self.gain + cv_to_db(gain) + panning_to_db(self.panning + panning),
+                    ),
+                    amplify(
+                        right,
+                        self.gain + cv_to_db(gain) + panning_to_db(-self.panning + -panning),
+                    ),
+                )
+            })
+    }
 }
 
 impl Source for Track {
     fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
-        //@TODO: implement panning and gain
-
         let inputs: Vec<&Signal> = self
             .inputs
             .iter()
             .filter_map(|&k| sources.get_signal(k))
             .collect();
 
-        let signal = Signal::silence().mix_into(&inputs);
+        let gain = self
+            .gain_cv
+            .and_then(|k| sources.get_signal(k))
+            .map(|s| s.sum_points())
+            .unwrap_or(0.9);
 
+        let panning = self
+            .panning_cv
+            .and_then(|k| sources.get_signal(k))
+            .map(|s| s.sum_points())
+            .unwrap_or(0.0);
+
+        let signal = self.step(&inputs, gain, panning);
         sources.set_signal(self.id, signal);
     }
 
@@ -130,11 +157,8 @@ fn panning_to_db(cv: Point) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clip::Clip;
-    use crate::oscillator::Oscillator;
-    use crate::primary::Primary;
-    use crate::signal::Signal;
-    use crate::stream::Stream;
+    use crate::basic::{Clip, Oscillator};
+    use crate::core::{Primary, Stream};
     use crate::traits::FromPoints;
 
     #[test]
@@ -175,71 +199,71 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_gain() {
-    //     let buffer_size = 4;
-    //     let sample_rate = 48_000;
+    #[test]
+    fn test_gain() {
+        let buffer_size = 4;
+        let sample_rate = 48_000;
 
-    //     let mut primary = Primary::new(buffer_size, sample_rate);
-    //     let mut clip = Clip::new(&mut primary, Signal::from_points(vec![1.0, 1.0, 1.0, 0.0]));
-    //     let mut lfo = Oscillator::new(&mut primary);
-    //     let mut track = Track::new(&mut primary);
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip = Clip::new(&mut primary, Stream::from_points(vec![1.0, 1.0, 1.0, 0.0]));
+        let mut lfo = Oscillator::new(&mut primary);
+        let mut track = Track::new(&mut primary);
 
-    //     lfo.frequency = 24_000.0;
-    //     track.add_input(&clip);
-    //     track.set_gain_cv(&lfo);
-    //     primary.add_monitor(&track);
+        lfo.frequency = 24_000.0;
+        track.add_input(&clip);
+        track.set_gain_cv(&lfo);
+        primary.add_monitor(&track);
 
-    //     assert_eq!(
-    //         primary
-    //             .sample(vec![&mut clip, &mut track, &mut lfo])
-    //             .unwrap(),
-    //         vec![
-    //             0.001995262,
-    //             0.001995262,
-    //             0.063095726,
-    //             0.063095726,
-    //             0.001995262,
-    //             0.001995262,
-    //             0.0,
-    //             0.0
-    //         ],
-    //     );
-    // }
+        assert_eq!(
+            primary
+                .sample(vec![&mut clip, &mut track, &mut lfo])
+                .unwrap(),
+            vec![
+                0.001995262,
+                0.001995262,
+                0.063095726,
+                0.063095726,
+                0.001995262,
+                0.001995262,
+                0.0,
+                0.0
+            ],
+        );
+    }
 
-    // #[test]
-    // fn test_panning() {
-    //     let buffer_size = 4;
-    //     let sample_rate = 48_000;
+    #[test]
+    fn test_panning() {
+        let buffer_size = 4;
+        let sample_rate = 48_000;
 
-    //     let mut primary = Primary::new(buffer_size, sample_rate);
-    //     let mut clip = Clip::new(&mut primary, Signal::from_points(vec![0.1, 0.1, 0.1, 0.0]));
-    //     let mut lfo = Oscillator::new(&mut primary);
-    //     let mut track = Track::new(&mut primary);
+        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut clip = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.1, 0.1, 0.0]));
+        let mut lfo = Oscillator::new(&mut primary);
+        let mut track = Track::new(&mut primary);
 
-    //     lfo.frequency = 24_000.0;
-    //     lfo.amplitude = 1.0;
-    //     lfo.output_square(0.5);
+        lfo.frequency = 24_000.0;
+        lfo.amplitude = 1.0;
+        lfo.output_square(0.5);
 
-    //     track.add_input(&clip);
-    //     track.set_panning_cv(&lfo);
+        track.add_input(&clip);
+        track.set_panning_cv(&lfo);
 
-    //     primary.add_monitor(&track);
+        primary.add_monitor(&track);
 
-    //     assert_eq!(
-    //         primary
-    //             .sample(vec![&mut clip, &mut track, &mut lfo])
-    //             .unwrap(),
-    //         vec![
-    //             0.19952624,
-    //             0.00000019952631,
-    //             0.00000019952631,
-    //             0.19952624,
-    //             0.19952624,
-    //             0.00000019952631,
-    //             0.0,
-    //             0.0,
-    //         ],
-    //     );
-    // }
+        assert_eq!(
+            primary
+                .sample(vec![&mut clip, &mut track, &mut lfo])
+                .unwrap(),
+            vec![
+                0.19952624,
+                0.00000019952631,
+                0.00000019952631,
+                0.19952624,
+                0.19952624,
+                0.00000019952631,
+                0.0,
+                0.0,
+            ],
+        );
+    }
 }

@@ -1,5 +1,4 @@
-use crate::signal::Signal;
-use crate::stream::Point;
+use crate::core::{Point, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -8,8 +7,8 @@ use alloc::vec::Vec;
 ///
 ///
 /// ```
-/// use screech::primary::Primary;
-/// use screech::oscillator::Oscillator;
+/// use screech::core::Primary;
+/// use screech::basic::Oscillator;
 ///
 /// // 4 samples per second
 /// let sample_rate = 4;
@@ -69,8 +68,8 @@ impl Oscillator {
     /// Set the main output to triangle
     ///
     /// ```
-    /// use screech::primary::Primary;
-    /// use screech::oscillator::Oscillator;
+    /// use screech::core::Primary;
+    /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
     /// let buffer_size = sample_rate * 4;
@@ -103,8 +102,8 @@ impl Oscillator {
     /// with a duty cycle between `0.0` (0%) and `1.0` (100%).
     ///
     /// ```
-    /// use screech::primary::Primary;
-    /// use screech::oscillator::Oscillator;
+    /// use screech::core::Primary;
+    /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
     /// let buffer_size = sample_rate;
@@ -132,8 +131,8 @@ impl Oscillator {
     /// Set the main output to saw
     ///
     /// ```
-    /// use screech::primary::Primary;
-    /// use screech::oscillator::Oscillator;
+    /// use screech::core::Primary;
+    /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
     /// let buffer_size = sample_rate * 2;
@@ -159,11 +158,9 @@ impl Oscillator {
         self.waveshape = Waveshape::Saw;
         self
     }
-}
 
-impl Source for Oscillator {
-    // fn sample(&mut self, _sources: &FxHashMap<usize, Signal>, sample_rate: usize) -> Signal {
-    fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize) {
+    /// Render the next real time signal
+    pub fn step(&mut self, sample_rate: usize) -> Signal {
         // peak to peak conversion of amplitude
         let peak_to_peak = self.amplitude * 2.0;
 
@@ -197,7 +194,13 @@ impl Source for Oscillator {
             self.value -= peak_to_peak;
         }
 
-        sources.set_signal(self.id, Signal::point(point));
+        Signal::point(point)
+    }
+}
+
+impl Source for Oscillator {
+    fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize) {
+        sources.set_signal(self.id, self.step(sample_rate));
     }
 
     fn get_id(&self) -> usize {
@@ -212,7 +215,7 @@ impl Source for Oscillator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primary::Primary;
+    use crate::core::Primary;
 
     #[test]
     fn test_basic_repetition() {

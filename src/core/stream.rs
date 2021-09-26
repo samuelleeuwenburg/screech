@@ -1,13 +1,8 @@
+use crate::core::Point;
 use crate::traits::FromPoints;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp;
-use libm::powf;
-
-/// Type alias representing audio data.
-/// There are no guarantees but ideally this value
-/// should never exceed beyond `-1.0` or `1.0`.
-pub type Point = f32;
 
 /// Error type for different Stream failures
 #[derive(Debug, PartialEq, Clone)]
@@ -30,7 +25,7 @@ impl Stream {
     /// Create zero initialized (silent) stream
     ///
     /// ```
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// assert_eq!(
     ///     Stream::empty(4),
@@ -44,7 +39,7 @@ impl Stream {
     /// Create a fixed stream containing a specific value
     ///
     /// ```
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// assert_eq!(
     ///     Stream::fixed(1.0),
@@ -58,7 +53,7 @@ impl Stream {
     /// Returns the length of the stream
     ///
     /// ```
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// assert_eq!(Stream::empty(4).len(), 4);
     /// ```
@@ -76,7 +71,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.0, 0.1, 0.2]);
     ///
@@ -94,7 +89,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.0, 0.1, 0.2]);
     ///
@@ -114,7 +109,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let streams = [
     ///     &Stream::from_points(vec![0.1, 0.0, -0.1, -0.2, -0.3]),
@@ -147,7 +142,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let streams = [
     ///     &Stream::from_points(vec![0.2, 0.1, 0.0]),
@@ -180,7 +175,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.1, 0.2, 0.3])
     ///     .map(|point| point * 2.0);
@@ -206,7 +201,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]);
     /// let gate_cv = Stream::from_points(vec![1.0, 0.0, 1.0, 0.0]);
@@ -241,54 +236,11 @@ impl Stream {
         }
     }
 
-    /// Amplify a stream by decibels
-    ///
-    /// **note** clamps values at -1.0 and 1.0
-    ///
-    /// ```
-    /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
-    ///
-    /// // 6 dBs should roughly double / half
-    /// let stream = Stream::from_points(vec![0.1, 0.3, 0.6, -0.1, -0.4, -0.8]).amplify(6.0);
-    ///
-    /// assert_eq!(stream.get_points().unwrap(), &[0.19952624, 0.59857875, 1.0, -0.19952624, -0.79810494, -1.0]);
-    /// ```
-    pub fn amplify(self, db: f32) -> Self {
-        let ratio = powf(10.0, db / 20.0);
-        self.map(|point| (point * ratio).clamp(-1.0, 1.0))
-    }
-
-    /// Amplify a signal by a another stream as CV,
-    /// with a function on how to convert the CV [`Point`]
-    /// to decibels
-    ///
-    /// ```
-    /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
-    ///
-    /// let cv = Stream::from_points(vec![1.0, -1.0, 1.0, -1.0]);
-    /// let stream = Stream::from_points(vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-    ///     .amplify_with_cv(&cv, |p| p * 6.0); // amplify between -6dB and +6dB
-    ///
-    /// assert_eq!(stream.get_points().unwrap(), &[0.19952624, 0.050118722, 0.19952624, 0.050118722, 0.1, 0.1]);
-    /// ```
-    pub fn amplify_with_cv<F>(self, cv: &Self, point_to_db: F) -> Self
-    where
-        F: Fn(Point) -> f32,
-    {
-        self.apply(cv, |point, cv| {
-            let db = point_to_db(cv);
-            let ratio = powf(10.0, db / 20.0);
-            (point * ratio).clamp(-1.0, 1.0)
-        })
-    }
-
     /// Invert the phase of the signal
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.3, 0.2, 0.1, 0.0, -0.1, -0.2]).invert();
     ///
@@ -302,7 +254,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
     ///     .slice(2, 3)
@@ -330,7 +282,7 @@ impl Stream {
     ///
     /// ```
     /// use screech::traits::FromPoints;
-    /// use screech::stream::Stream;
+    /// use screech::core::Stream;
     ///
     /// let stream = Stream::from_points(vec![0.1, 0.2, 0.3])
     ///     .looped_slice(0, 8);
@@ -426,45 +378,6 @@ mod tests {
         ]);
 
         assert_eq!(stream.get_points().unwrap(), &[0.6, 0.1, -0.1, -0.2, -0.3]);
-    }
-
-    #[test]
-    fn test_amplify() {
-        let stream = Stream::empty(1).amplify(6.0);
-        assert_eq!(stream.get_points().unwrap(), &[0.0]);
-
-        // 6 dBs should roughly double / half
-        let stream = Stream::from_points(vec![0.1, 0.25, 0.3, -0.1, -0.4]).amplify(6.0);
-
-        let rounded_points: Vec<Point> = stream
-            .get_points()
-            .unwrap()
-            .iter()
-            .map(|x| (x * 10.0).round() / 10.0)
-            .collect::<Vec<Point>>();
-
-        assert_eq!(rounded_points, vec![0.2, 0.5, 0.6, -0.2, -0.8]);
-
-        let stream = Stream::from_points(vec![0.4, 0.5, 0.8, -0.3, -0.6]).amplify(-6.0);
-
-        let rounded_points: Vec<Point> = stream
-            .get_points()
-            .unwrap()
-            .iter()
-            .map(|x| (x * 100.0).round() / 100.0)
-            .collect::<Vec<Point>>();
-        assert_eq!(rounded_points, vec![0.2, 0.25, 0.4, -0.15, -0.3]);
-
-        // clamp the value
-        let stream = Stream::from_points(vec![0.1, 0.4, 0.6, -0.2, -0.3, -0.5]).amplify(12.0);
-
-        let rounded_points: Vec<Point> = stream
-            .get_points()
-            .unwrap()
-            .iter()
-            .map(|x| (x * 100.0).round() / 100.0)
-            .collect::<Vec<Point>>();
-        assert_eq!(rounded_points, vec![0.4, 1.0, 1.0, -0.8, -1.0, -1.0]);
     }
 
     #[test]

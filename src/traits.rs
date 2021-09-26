@@ -1,4 +1,4 @@
-use crate::signal::Signal;
+use crate::core::Signal;
 use alloc::vec::Vec;
 
 /// To implement [`Source`] means something can be a source of sound,
@@ -11,9 +11,9 @@ use alloc::vec::Vec;
 /// can choose to send the audio through unprocessed, or fail and send
 /// silence instead
 ///
-/// [`crate::clip::Clip`] as an example implements [`Source`]
-/// [`crate::track::Track`] as an example implements [`Source`]
-/// [`crate::oscillator::Oscillator`] as an example implements [`Source`]
+/// [`crate::basic::Clip`] as an example implements [`Source`]
+/// [`crate::basic::Track`] as an example implements [`Source`]
+/// [`crate::basic::Oscillator`] as an example implements [`Source`]
 pub trait Source {
     /// move one buffersize forward in discrete time
     fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize);
@@ -27,10 +27,10 @@ pub trait Source {
 
 /// Tracker trait to provide [`Source`]-es with unique IDs
 ///
-/// Out of the box [`crate::primary::Primary`] implements this trait for you,
+/// Out of the box [`crate::core::Primary`] implements this trait for you,
 /// but you can also roll your own.
 ///
-/// structs like [`crate::track::Track`] and [`crate::clip::Clip`]
+/// structs like [`crate::basic::Track`] and [`crate::basic::Clip`]
 /// take a `&mut dyn Tracker` as their first argument
 /// during construction to generate a unique ID
 pub trait Tracker {
