@@ -3,9 +3,8 @@ use screech::basic::{Oscillator, Track};
 use screech::core::Primary;
 use screech::traits::Source;
 
-fn primary(osc_count: usize, track_count: usize, buffer_size: usize) -> Vec<f32> {
-    let sample_rate = 48_000;
-    let mut primary = Primary::new(buffer_size, sample_rate);
+fn primary(osc_count: usize, track_count: usize) -> Vec<f32> {
+    let mut primary = Primary::<480, 20000>::new(48_000);
     let mut tracks: Vec<Track> = vec![];
     let mut oscs: Vec<Oscillator> = vec![];
 
@@ -38,9 +37,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("sampling oscillators across multiple tracks", |b| {
         b.iter(|| {
             primary(
-                black_box(10),  // # oscillators
-                black_box(10),  // times # tracks
-                black_box(480), // buffer size
+                black_box(10), // # oscillators
+                black_box(10), // times # tracks
             )
         })
     });

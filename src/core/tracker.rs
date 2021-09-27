@@ -1,23 +1,23 @@
 use crate::core::Signal;
 use crate::traits::Tracker;
-use rustc_hash::FxHashMap;
 
 /// Basic tracker for the creation of unique ids
 /// and to keep track of signals belonging to a certain id
-pub struct BasicTracker {
+pub struct BasicTracker<const SIZE: usize> {
     id_position: usize,
-    signals: FxHashMap<usize, Signal>,
+    signals: [Option<Signal>; SIZE],
 }
 
-impl BasicTracker {
+impl<const SIZE: usize> BasicTracker<SIZE> {
     /// create a new tracker
     ///
     /// ```
     /// use screech::traits::Source;
     /// use screech::core::BasicTracker;
     /// use screech::basic::{Track, Oscillator};
-    ///
-    /// let mut tracker = BasicTracker::new();
+    //
+    /// const SOURCES_SIZE: usize = 2;
+    /// let mut tracker = BasicTracker::<SOURCES_SIZE>::new();
     /// let osc = Oscillator::new(&mut tracker);
     /// let track = Track::new(&mut tracker);
     ///
@@ -27,24 +27,30 @@ impl BasicTracker {
     pub fn new() -> Self {
         BasicTracker {
             id_position: 0,
-            signals: FxHashMap::default(),
+            // signals: FxHashMap::default(),
+            signals: [None; SIZE],
         }
     }
 }
 
-impl Tracker for BasicTracker {
+impl<const SIZE: usize> Tracker for BasicTracker<SIZE> {
     fn create_id(&mut self) -> usize {
-        // @TODO: this is pretty naive, best keep track of ids somewhere in a vec
+        // @TODO: look for a `None` value inside the array
         let id = self.id_position;
+        self.signals[id] = Some(Signal::silence());
         self.id_position += 1;
         id
     }
 
+    fn clear_id(&mut self, id: usize) {
+        self.signals[id] = None;
+    }
+
     fn get_signal(&self, id: usize) -> Option<&Signal> {
-        self.signals.get(&id)
+        self.signals[id].as_ref()
     }
 
     fn set_signal(&mut self, id: usize, signal: Signal) {
-        self.signals.insert(id, signal);
+        self.signals[id] = Some(signal);
     }
 }

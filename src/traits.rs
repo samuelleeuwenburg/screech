@@ -37,6 +37,9 @@ pub trait Tracker {
     /// Return a unique ID
     fn create_id(&mut self) -> usize;
 
+    /// clear id for reuse
+    fn clear_id(&mut self, id: usize);
+
     /// get signal for id
     fn get_signal(&self, id: usize) -> Option<&Signal>;
 

@@ -13,10 +13,11 @@ use rustc_hash::FxHashMap;
 /// use screech::core::{Primary, Stream};
 /// use screech::basic::{Clip, Track};
 ///
-/// let buffer_size = 2;
+/// const BUFFER_SIZE: usize = 2;
+/// const SOURCES_SIZE: usize = 32;
 /// let sample_rate = 48_000;
 ///
-/// let mut primary = Primary::new(buffer_size, sample_rate);
+/// let mut primary = Primary::<BUFFER_SIZE, SOURCES_SIZE>::new(sample_rate);
 /// let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
 /// let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
@@ -40,12 +41,12 @@ use rustc_hash::FxHashMap;
 ///     vec![0.0, 0.0, 0.0, 0.0],
 /// );
 /// ```
-pub struct Primary {
-    buffer_size: usize,
+pub struct Primary<const BUFFER_SIZE: usize, const SOURCES_SIZE: usize> {
+    buffer: [Signal; BUFFER_SIZE],
     sample_rate: usize,
     monitored_sources: Vec<usize>,
     output_mode: OutputMode,
-    tracker: BasicTracker,
+    tracker: BasicTracker<SOURCES_SIZE>,
 }
 
 enum OutputMode {
@@ -68,15 +69,15 @@ pub enum Error {
     MissingDependency,
 }
 
-impl Primary {
+impl<const BUFFER_SIZE: usize, const SOURCES_SIZE: usize> Primary<BUFFER_SIZE, SOURCES_SIZE> {
     /// Create new Primary "channel"
-    pub fn new(buffer_size: usize, sample_rate: usize) -> Self {
+    pub fn new(sample_rate: usize) -> Self {
         Primary {
-            buffer_size,
+            buffer: [Signal::silence(); BUFFER_SIZE],
             sample_rate,
             monitored_sources: vec![],
             output_mode: OutputMode::Stereo,
-            tracker: BasicTracker::new(),
+            tracker: BasicTracker::<SOURCES_SIZE>::new(),
         }
     }
 
@@ -126,10 +127,9 @@ impl Primary {
             sorted_sources.push(source);
         }
 
-        let mut final_stream = Vec::with_capacity(self.buffer_size);
         let sample_rate = self.sample_rate;
 
-        for _ in 0..self.buffer_size {
+        for i in 0..BUFFER_SIZE {
             for source in sorted_sources.iter_mut() {
                 source.sample(self, sample_rate);
             }
@@ -140,12 +140,12 @@ impl Primary {
                 .filter_map(|&k| self.get_signal(k))
                 .collect();
 
-            final_stream.push(Signal::mix(&signals));
+            self.buffer[i] = Signal::mix(&signals);
         }
 
-        let mut output = Vec::with_capacity(self.buffer_size * 2);
+        let mut output = Vec::with_capacity(BUFFER_SIZE * 2);
 
-        for signal in final_stream {
+        for signal in self.buffer {
             match self.output_mode {
                 OutputMode::Mono => {
                     let point = signal.sum_points();
@@ -165,9 +165,13 @@ impl Primary {
     }
 }
 
-impl Tracker for Primary {
+impl<const A: usize, const B: usize> Tracker for Primary<A, B> {
     fn create_id(&mut self) -> usize {
         self.tracker.create_id()
+    }
+
+    fn clear_id(&mut self, id: usize) {
+        self.tracker.clear_id(id)
     }
 
     fn get_signal(&self, id: usize) -> Option<&Signal> {
@@ -188,10 +192,7 @@ mod tests {
 
     #[test]
     fn test_complex_dependencies() {
-        let buffer_size = 5;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<5, 20>::new(48_000);
 
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1]));
         let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.2]));
@@ -239,10 +240,7 @@ mod tests {
 
     #[test]
     fn test_dependency_failure() {
-        let buffer_size = 2;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<2, 10>::new(48_000);
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
         let clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
         let clip_c = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
@@ -263,10 +261,7 @@ mod tests {
 
     #[test]
     fn test_circular_dependency_failure() {
-        let buffer_size = 2;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<2, 10>::new(48_000);
         let mut track_a = Track::new(&mut primary);
         let mut track_b = Track::new(&mut primary);
 

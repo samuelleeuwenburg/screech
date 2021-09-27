@@ -179,10 +179,7 @@ mod tests {
 
     #[test]
     fn test_mix() {
-        let buffer_size = 4;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<4, 10>::new(48_000);
         let mut clip1 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]));
         let mut clip2 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.0, 0.1, 0.0]));
         let mut track = Track::new(&mut primary);
@@ -201,10 +198,7 @@ mod tests {
 
     #[test]
     fn test_gain() {
-        let buffer_size = 4;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<4, 10>::new(48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![1.0, 1.0, 1.0, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
@@ -233,10 +227,7 @@ mod tests {
 
     #[test]
     fn test_panning() {
-        let buffer_size = 4;
-        let sample_rate = 48_000;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<4, 10>::new(48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.1, 0.1, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);

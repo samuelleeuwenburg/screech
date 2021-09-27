@@ -5,17 +5,12 @@ use alloc::vec::Vec;
 
 /// Basic saw ramp oscillator.
 ///
-///
 /// ```
 /// use screech::core::Primary;
 /// use screech::basic::Oscillator;
 ///
-/// // 4 samples per second
 /// let sample_rate = 4;
-/// // sample a total of 4 seconds
-/// let buffer_size = sample_rate * 4;
-///
-/// let mut primary = Primary::new(buffer_size, sample_rate);
+/// let mut primary = Primary::<16, 1>::new(sample_rate);
 /// let mut oscillator = Oscillator::new(&mut primary);
 ///
 /// oscillator.frequency = 1.0;
@@ -72,9 +67,7 @@ impl Oscillator {
     /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
-    /// let buffer_size = sample_rate * 4;
-    ///
-    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut primary = Primary::<16, 1>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 0.5;
@@ -106,9 +99,7 @@ impl Oscillator {
     /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
-    /// let buffer_size = sample_rate;
-    ///
-    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut primary = Primary::<4, 1>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 1.0;
@@ -135,9 +126,7 @@ impl Oscillator {
     /// use screech::basic::Oscillator;
     ///
     /// let sample_rate = 4;
-    /// let buffer_size = sample_rate * 2;
-    ///
-    /// let mut primary = Primary::new(buffer_size, sample_rate);
+    /// let mut primary = Primary::<8, 1>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 0.5;
@@ -219,12 +208,7 @@ mod tests {
 
     #[test]
     fn test_basic_repetition() {
-        // 4 samples per second
-        let sample_rate = 4;
-        // sample a total of 4 seconds
-        let buffer_size = sample_rate * 4;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<{ 4 * 4 }, 1>::new(4);
         let mut oscillator = Oscillator::new(&mut primary);
 
         oscillator.frequency = 1.0;
@@ -244,10 +228,7 @@ mod tests {
 
     #[test]
     fn test_repeat_every_other_second() {
-        let sample_rate = 4;
-        let buffer_size = sample_rate * 3;
-
-        let mut primary = Primary::new(buffer_size, sample_rate);
+        let mut primary = Primary::<{ 4 * 3 }, 1>::new(4);
         let mut oscillator = Oscillator::new(&mut primary);
 
         oscillator.frequency = 1.5;

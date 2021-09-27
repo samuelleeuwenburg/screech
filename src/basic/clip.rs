@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
-        let mut primary = Primary::new(5, 48_000);
+        let mut primary = Primary::<5, 10>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
-        let mut primary = Primary::new(8, 48_000);
+        let mut primary = Primary::<8, 10>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_play_oneshot() {
-        let mut primary = Primary::new(8, 48_000);
+        let mut primary = Primary::<8, 10>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
