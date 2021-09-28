@@ -1,8 +1,22 @@
 use crate::core::Signal;
 use crate::traits::Tracker;
 
-/// Basic tracker for the creation of unique ids
+/// Basic fixed size tracker for the creation of unique ids
 /// and to keep track of signals belonging to a certain id
+///
+/// ```
+/// use screech::traits::Source;
+/// use screech::core::BasicTracker;
+/// use screech::basic::{Track, Oscillator};
+//
+/// const SOURCES_SIZE: usize = 2;
+/// let mut tracker = BasicTracker::<SOURCES_SIZE>::new();
+/// let osc = Oscillator::new(&mut tracker);
+/// let track = Track::new(&mut tracker);
+///
+/// // the resulting id is irrelevant as long as it is unique
+/// assert_eq!(osc.get_id() != track.get_id(), true);
+/// ```
 pub struct BasicTracker<const SIZE: usize> {
     id_position: usize,
     signals: [Option<Signal>; SIZE],
@@ -10,24 +24,9 @@ pub struct BasicTracker<const SIZE: usize> {
 
 impl<const SIZE: usize> BasicTracker<SIZE> {
     /// create a new tracker
-    ///
-    /// ```
-    /// use screech::traits::Source;
-    /// use screech::core::BasicTracker;
-    /// use screech::basic::{Track, Oscillator};
-    //
-    /// const SOURCES_SIZE: usize = 2;
-    /// let mut tracker = BasicTracker::<SOURCES_SIZE>::new();
-    /// let osc = Oscillator::new(&mut tracker);
-    /// let track = Track::new(&mut tracker);
-    ///
-    /// // the resulting id is irrelevant as long as it is unique
-    /// assert_eq!(osc.get_id() != track.get_id(), true);
-    /// ```
     pub fn new() -> Self {
         BasicTracker {
             id_position: 0,
-            // signals: FxHashMap::default(),
             signals: [None; SIZE],
         }
     }

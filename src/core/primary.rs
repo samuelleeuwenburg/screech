@@ -1,5 +1,5 @@
 use crate::core::graph::{topological_sort, Error as GraphError};
-use crate::core::{BasicTracker, Point, Signal};
+use crate::core::{Point, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -10,14 +10,14 @@ use rustc_hash::FxHashMap;
 ///
 /// ```
 /// use screech::traits::{FromPoints, Source};
-/// use screech::core::{Primary, Stream};
+/// use screech::core::{Primary, Stream, DynamicTracker};
 /// use screech::basic::{Clip, Track};
 ///
 /// const BUFFER_SIZE: usize = 2;
-/// const SOURCES_SIZE: usize = 32;
 /// let sample_rate = 48_000;
 ///
-/// let mut primary = Primary::<BUFFER_SIZE, SOURCES_SIZE>::new(sample_rate);
+/// let mut tracker = DynamicTracker::new();
+/// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
 /// let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
 /// let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
@@ -41,12 +41,13 @@ use rustc_hash::FxHashMap;
 ///     vec![0.0, 0.0, 0.0, 0.0],
 /// );
 /// ```
-pub struct Primary<const BUFFER_SIZE: usize, const SOURCES_SIZE: usize> {
+pub struct Primary<'a, const BUFFER_SIZE: usize> {
     buffer: [Signal; BUFFER_SIZE],
     sample_rate: usize,
     monitored_sources: Vec<usize>,
     output_mode: OutputMode,
-    tracker: BasicTracker<SOURCES_SIZE>,
+    // tracker: BasicTracker<SOURCES_SIZE>,
+    tracker: &'a mut dyn Tracker,
 }
 
 enum OutputMode {
@@ -69,15 +70,16 @@ pub enum Error {
     MissingDependency,
 }
 
-impl<const BUFFER_SIZE: usize, const SOURCES_SIZE: usize> Primary<BUFFER_SIZE, SOURCES_SIZE> {
+impl<'a, const BUFFER_SIZE: usize> Primary<'a, BUFFER_SIZE> {
     /// Create new Primary "channel"
-    pub fn new(sample_rate: usize) -> Self {
+    pub fn new(tracker: &'a mut dyn Tracker, sample_rate: usize) -> Self {
         Primary {
             buffer: [Signal::silence(); BUFFER_SIZE],
             sample_rate,
             monitored_sources: vec![],
             output_mode: OutputMode::Stereo,
-            tracker: BasicTracker::<SOURCES_SIZE>::new(),
+            // tracker: BasicTracker::<SOURCES_SIZE>::new(),
+            tracker,
         }
     }
 
@@ -165,7 +167,7 @@ impl<const BUFFER_SIZE: usize, const SOURCES_SIZE: usize> Primary<BUFFER_SIZE, S
     }
 }
 
-impl<const A: usize, const B: usize> Tracker for Primary<A, B> {
+impl<'a, const A: usize> Tracker for Primary<'a, A> {
     fn create_id(&mut self) -> usize {
         self.tracker.create_id()
     }
@@ -187,12 +189,13 @@ impl<const A: usize, const B: usize> Tracker for Primary<A, B> {
 mod tests {
     use super::*;
     use crate::basic::{Clip, Track};
-    use crate::core::Stream;
+    use crate::core::{DynamicTracker, Stream};
     use crate::traits::FromPoints;
 
     #[test]
     fn test_complex_dependencies() {
-        let mut primary = Primary::<5, 20>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<5>::new(&mut tracker, 48_000);
 
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1]));
         let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.2]));
@@ -240,7 +243,8 @@ mod tests {
 
     #[test]
     fn test_dependency_failure() {
-        let mut primary = Primary::<2, 10>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<2>::new(&mut tracker, 48_000);
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
         let clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
         let clip_c = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
@@ -261,7 +265,8 @@ mod tests {
 
     #[test]
     fn test_circular_dependency_failure() {
-        let mut primary = Primary::<2, 10>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<2>::new(&mut tracker, 48_000);
         let mut track_a = Track::new(&mut primary);
         let mut track_b = Track::new(&mut primary);
 

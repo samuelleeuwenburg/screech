@@ -11,4 +11,4 @@ pub use point::Point;
 pub use primary::Primary;
 pub use signal::Signal;
 pub use stream::Stream;
-pub use tracker::BasicTracker;
+pub use tracker::{BasicTracker, DynamicTracker};

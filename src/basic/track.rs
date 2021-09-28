@@ -158,7 +158,7 @@ fn panning_to_db(cv: Point) -> f32 {
 mod tests {
     use super::*;
     use crate::basic::{Clip, Oscillator};
-    use crate::core::{Primary, Stream};
+    use crate::core::{DynamicTracker, Primary, Stream};
     use crate::traits::FromPoints;
 
     #[test]
@@ -179,7 +179,8 @@ mod tests {
 
     #[test]
     fn test_mix() {
-        let mut primary = Primary::<4, 10>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<4>::new(&mut tracker, 48_000);
         let mut clip1 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]));
         let mut clip2 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.0, 0.1, 0.0]));
         let mut track = Track::new(&mut primary);
@@ -198,7 +199,8 @@ mod tests {
 
     #[test]
     fn test_gain() {
-        let mut primary = Primary::<4, 10>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<4>::new(&mut tracker, 48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![1.0, 1.0, 1.0, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
@@ -227,7 +229,8 @@ mod tests {
 
     #[test]
     fn test_panning() {
-        let mut primary = Primary::<4, 10>::new(48_000);
+        let mut tracker = DynamicTracker::new();
+        let mut primary = Primary::<4>::new(&mut tracker, 48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.1, 0.1, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
