@@ -11,8 +11,7 @@ use alloc::vec::Vec;
 ///
 /// const BUFFER_SIZE: usize = 16;
 /// let sample_rate = 4;
-/// let mut tracker = DynamicTracker::new();
-/// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
+/// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
 /// let mut oscillator = Oscillator::new(&mut primary);
 ///
 /// oscillator.frequency = 1.0;
@@ -65,13 +64,12 @@ impl Oscillator {
     /// Set the main output to triangle
     ///
     /// ```
-    /// use screech::core::{Primary, DynamicTracker};
+    /// use screech::core::Primary;
     /// use screech::basic::Oscillator;
     ///
     /// const BUFFER_SIZE: usize = 16;
     /// let sample_rate = 4;
-    /// let mut tracker = DynamicTracker::new();
-    /// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
+    /// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 0.5;
@@ -99,13 +97,12 @@ impl Oscillator {
     /// with a duty cycle between `0.0` (0%) and `1.0` (100%).
     ///
     /// ```
-    /// use screech::core::{Primary, DynamicTracker};
+    /// use screech::core::Primary;
     /// use screech::basic::Oscillator;
     ///
     /// const BUFFER_SIZE: usize = 4;
     /// let sample_rate = 4;
-    /// let mut tracker = DynamicTracker::new();
-    /// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
+    /// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 1.0;
@@ -128,13 +125,12 @@ impl Oscillator {
     /// Set the main output to saw
     ///
     /// ```
-    /// use screech::core::{Primary, DynamicTracker};
+    /// use screech::core::Primary;
     /// use screech::basic::Oscillator;
     ///
     /// const BUFFER_SIZE: usize = 8;
     /// let sample_rate = 4;
-    /// let mut tracker = DynamicTracker::new();
-    /// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
+    /// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
     /// let mut oscillator = Oscillator::new(&mut primary);
     ///
     /// oscillator.frequency = 0.5;
@@ -212,12 +208,11 @@ impl Source for Oscillator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{DynamicTracker, Primary};
+    use crate::core::Primary;
 
     #[test]
     fn test_basic_repetition() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<{ 4 * 4 }>::new(&mut tracker, 4);
+        let mut primary = Primary::<{ 4 * 4 }>::new(4);
         let mut oscillator = Oscillator::new(&mut primary);
 
         oscillator.frequency = 1.0;
@@ -237,8 +232,7 @@ mod tests {
 
     #[test]
     fn test_repeat_every_other_second() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<{ 4 * 3 }>::new(&mut tracker, 4);
+        let mut primary = Primary::<{ 4 * 3 }>::new(4);
         let mut oscillator = Oscillator::new(&mut primary);
 
         oscillator.frequency = 1.5;

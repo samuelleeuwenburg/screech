@@ -1,6 +1,7 @@
 use crate::core::graph::{topological_sort, Error as GraphError};
-use crate::core::{Point, Signal};
+use crate::core::{DynamicTracker, Point, Signal};
 use crate::traits::{Source, Tracker};
+use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use rustc_hash::FxHashMap;
@@ -16,8 +17,8 @@ use rustc_hash::FxHashMap;
 /// const BUFFER_SIZE: usize = 2;
 /// let sample_rate = 48_000;
 ///
-/// let mut tracker = DynamicTracker::new();
-/// let mut primary = Primary::<BUFFER_SIZE>::new(&mut tracker, sample_rate);
+/// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
+///
 /// let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
 /// let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
@@ -41,13 +42,13 @@ use rustc_hash::FxHashMap;
 ///     vec![0.0, 0.0, 0.0, 0.0],
 /// );
 /// ```
-pub struct Primary<'a, const BUFFER_SIZE: usize> {
+pub struct Primary<const BUFFER_SIZE: usize> {
     buffer: [Signal; BUFFER_SIZE],
     sample_rate: usize,
     monitored_sources: Vec<usize>,
     output_mode: OutputMode,
     // tracker: BasicTracker<SOURCES_SIZE>,
-    tracker: &'a mut dyn Tracker,
+    tracker: Box<dyn Tracker>,
 }
 
 enum OutputMode {
@@ -70,15 +71,32 @@ pub enum Error {
     MissingDependency,
 }
 
-impl<'a, const BUFFER_SIZE: usize> Primary<'a, BUFFER_SIZE> {
-    /// Create new Primary "channel"
-    pub fn new(tracker: &'a mut dyn Tracker, sample_rate: usize) -> Self {
+impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
+    /// Create new Primary with a default tracker
+    pub fn new(sample_rate: usize) -> Self {
         Primary {
             buffer: [Signal::silence(); BUFFER_SIZE],
             sample_rate,
             monitored_sources: vec![],
             output_mode: OutputMode::Stereo,
-            // tracker: BasicTracker::<SOURCES_SIZE>::new(),
+            tracker: Box::new(DynamicTracker::new()),
+        }
+    }
+
+    /// Create a new Primary with a supplied tracker
+    ///
+    /// ```
+    /// use screech::core::{Primary, BasicTracker};
+    ///
+    /// let tracker = BasicTracker::<256>::new();
+    /// let primary = Primary::<128>::with_tracker(Box::new(tracker), 48_000);
+    /// ```
+    pub fn with_tracker(tracker: Box<dyn Tracker>, sample_rate: usize) -> Self {
+        Primary {
+            buffer: [Signal::silence(); BUFFER_SIZE],
+            sample_rate,
+            monitored_sources: vec![],
+            output_mode: OutputMode::Stereo,
             tracker,
         }
     }
@@ -167,7 +185,7 @@ impl<'a, const BUFFER_SIZE: usize> Primary<'a, BUFFER_SIZE> {
     }
 }
 
-impl<'a, const A: usize> Tracker for Primary<'a, A> {
+impl<const A: usize> Tracker for Primary<A> {
     fn create_id(&mut self) -> usize {
         self.tracker.create_id()
     }
@@ -189,13 +207,12 @@ impl<'a, const A: usize> Tracker for Primary<'a, A> {
 mod tests {
     use super::*;
     use crate::basic::{Clip, Track};
-    use crate::core::{DynamicTracker, Stream};
+    use crate::core::Stream;
     use crate::traits::FromPoints;
 
     #[test]
     fn test_complex_dependencies() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<5>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<5>::new(48_000);
 
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1]));
         let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.2]));
@@ -243,8 +260,7 @@ mod tests {
 
     #[test]
     fn test_dependency_failure() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<2>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<2>::new(48_000);
         let mut clip_a = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.2, 0.1]));
         let clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
         let clip_c = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
@@ -265,8 +281,7 @@ mod tests {
 
     #[test]
     fn test_circular_dependency_failure() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<2>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<2>::new(48_000);
         let mut track_a = Track::new(&mut primary);
         let mut track_b = Track::new(&mut primary);
 

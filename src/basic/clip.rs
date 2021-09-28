@@ -78,14 +78,13 @@ impl Source for Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{DynamicTracker, Primary, Stream};
+    use crate::core::{Primary, Stream};
     use crate::traits::FromPoints;
     use alloc::vec;
 
     #[test]
     fn test_play_loop_buffer_smaller_than_sample() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<5>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<5>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
@@ -111,8 +110,7 @@ mod tests {
 
     #[test]
     fn test_play_loop_buffer_larger_than_sample() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<8>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<8>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
@@ -132,8 +130,7 @@ mod tests {
 
     #[test]
     fn test_play_oneshot() {
-        let mut tracker = DynamicTracker::new();
-        let mut primary = Primary::<8>::new(&mut tracker, 48_000);
+        let mut primary = Primary::<8>::new(48_000);
         let mut clip = Clip::new(
             &mut primary,
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
