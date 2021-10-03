@@ -80,9 +80,12 @@ impl Track {
 
     /// Render the next real time signal
     pub fn step(&mut self, inputs: &[&Signal], gain: f32, panning: f32) -> Signal {
-        Signal::silence()
-            .mix_into(&inputs)
-            .map_to_stereo(|left, right| {
+        let signal = Signal::silence().mix_into(&inputs);
+
+        if gain == 0.9 && panning == 0.0 {
+            signal
+        } else {
+            signal.map_to_stereo(|left, right| {
                 (
                     amplify(
                         left,
@@ -94,6 +97,7 @@ impl Track {
                     ),
                 )
             })
+        }
     }
 }
 
@@ -179,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_mix() {
-        let mut primary = Primary::<4>::new(48_000);
+        let mut primary = Primary::<8>::new(48_000);
         let mut clip1 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.2, 0.3, 0.4]));
         let mut clip2 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.0, 0.1, 0.0]));
         let mut track = Track::new(&mut primary);
@@ -192,13 +196,13 @@ mod tests {
             primary
                 .sample(vec![&mut clip1, &mut clip2, &mut track])
                 .unwrap(),
-            vec![0.2, 0.2, 0.2, 0.2, 0.4, 0.4, 0.4, 0.4],
+            &[0.2, 0.2, 0.2, 0.2, 0.4, 0.4, 0.4, 0.4],
         );
     }
 
     #[test]
     fn test_gain() {
-        let mut primary = Primary::<4>::new(48_000);
+        let mut primary = Primary::<8>::new(48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![1.0, 1.0, 1.0, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
@@ -212,7 +216,7 @@ mod tests {
             primary
                 .sample(vec![&mut clip, &mut track, &mut lfo])
                 .unwrap(),
-            vec![
+            &[
                 0.001995262,
                 0.001995262,
                 0.063095726,
@@ -227,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_panning() {
-        let mut primary = Primary::<4>::new(48_000);
+        let mut primary = Primary::<8>::new(48_000);
         let mut clip = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.1, 0.1, 0.0]));
         let mut lfo = Oscillator::new(&mut primary);
         let mut track = Track::new(&mut primary);
@@ -245,7 +249,7 @@ mod tests {
             primary
                 .sample(vec![&mut clip, &mut track, &mut lfo])
                 .unwrap(),
-            vec![
+            &[
                 0.19952624,
                 0.00000019952631,
                 0.00000019952631,

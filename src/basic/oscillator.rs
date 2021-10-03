@@ -18,14 +18,15 @@ use alloc::vec::Vec;
 /// oscillator.amplitude = 0.5;
 ///
 /// primary.add_monitor(&oscillator);
+/// primary.output_mono();
 ///
 /// assert_eq!(
 ///     primary.sample(vec![&mut oscillator]).unwrap(),
-///     vec![
-///         0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
-///         0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
-///         0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
-///         0.0, 0.0, 0.25, 0.25, 0.5, 0.5, -0.25, -0.25,
+///     &[
+///         0.0, 0.25, 0.5, -0.25,
+///         0.0, 0.25, 0.5, -0.25,
+///         0.0, 0.25, 0.5, -0.25,
+///         0.0, 0.25, 0.5, -0.25,
 ///     ],
 /// );
 /// ```
@@ -77,14 +78,15 @@ impl Oscillator {
     /// oscillator.output_triangle();
     ///
     /// primary.add_monitor(&oscillator);
+    /// primary.output_mono();
     ///
     /// assert_eq!(
     ///     primary.sample(vec![&mut oscillator]).unwrap(),
-    ///     vec![
-    ///         -1.0, -1.0, -0.5, -0.5, 0.0, 0.0, 0.5, 0.5,
-    ///         1.0, 1.0, 0.5, 0.5, 0.0, 0.0, -0.5, -0.5,
-    ///         -1.0, -1.0, -0.5, -0.5, 0.0, 0.0, 0.5, 0.5,
-    ///         1.0, 1.0, 0.5, 0.5, 0.0, 0.0, -0.5, -0.5,
+    ///     &[
+    ///         -1.0, -0.5, 0.0,  0.5,
+    ///          1.0,  0.5, 0.0, -0.5,
+    ///         -1.0, -0.5, 0.0,  0.5,
+    ///          1.0,  0.5, 0.0, -0.5,
     ///     ],
     /// );
     /// ```
@@ -111,10 +113,11 @@ impl Oscillator {
     /// oscillator.output_square(0.25);
     ///
     /// primary.add_monitor(&oscillator);
+    /// primary.output_mono();
     ///
     /// assert_eq!(
-    ///          primary.sample(vec![&mut oscillator]).unwrap(),
-    ///         vec![-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0],
+    ///         primary.sample(vec![&mut oscillator]).unwrap(),
+    ///         &[-1.0, -1.0, -1.0, 1.0],
     /// );
     /// ```
     pub fn output_square(&mut self, duty_cycle: f32) -> &mut Self {
@@ -138,12 +141,13 @@ impl Oscillator {
     /// oscillator.output_saw();
     ///
     /// primary.add_monitor(&oscillator);
+    /// primary.output_mono();
     ///
     /// assert_eq!(
     ///         primary.sample(vec![&mut oscillator]).unwrap(),
-    ///         vec![
-    ///              0.0, 0.0,  0.25,  0.25,  0.5,  0.5,  0.75,  0.75,
-    ///              1.0, 1.0, -0.75, -0.75, -0.5, -0.5, -0.25, -0.25,
+    ///         &[
+    ///              0.0,  0.25,  0.5,  0.75,
+    ///              1.0, -0.75, -0.5, -0.25,
     ///         ],
     /// );
     /// ```
@@ -219,13 +223,13 @@ mod tests {
         oscillator.amplitude = 0.25;
 
         primary.add_monitor(&oscillator);
+        primary.output_mono();
 
         assert_eq!(
             primary.sample(vec![&mut oscillator]).unwrap(),
-            vec![
-                0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0, 0.125, 0.125, 0.25,
-                0.25, -0.125, -0.125, 0.0, 0.0, 0.125, 0.125, 0.25, 0.25, -0.125, -0.125, 0.0, 0.0,
-                0.125, 0.125, 0.25, 0.25, -0.125, -0.125,
+            &[
+                0.0, 0.125, 0.25, -0.125, 0.0, 0.125, 0.25, -0.125, 0.0, 0.125, 0.25, -0.125, 0.0,
+                0.125, 0.25, -0.125,
             ],
         );
     }
@@ -239,13 +243,11 @@ mod tests {
         oscillator.amplitude = 0.5;
 
         primary.add_monitor(&oscillator);
+        primary.output_mono();
 
         assert_eq!(
             primary.sample(vec![&mut oscillator]).unwrap(),
-            vec![
-                0.0, 0.0, 0.375, 0.375, -0.25, -0.25, 0.125, 0.125, 0.5, 0.5, -0.125, -0.125, 0.25,
-                0.25, -0.375, -0.375, 0.0, 0.0, 0.375, 0.375, -0.25, -0.25, 0.125, 0.125
-            ],
+            &[0.0, 0.375, -0.25, 0.125, 0.5, -0.125, 0.25, -0.375, 0.0, 0.375, -0.25, 0.125],
         );
     }
 }

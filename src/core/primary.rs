@@ -14,7 +14,7 @@ use rustc_hash::FxHashMap;
 /// use screech::core::{Primary, Stream, DynamicTracker};
 /// use screech::basic::{Clip, Track};
 ///
-/// const BUFFER_SIZE: usize = 2;
+/// const BUFFER_SIZE: usize = 4;
 /// let sample_rate = 48_000;
 ///
 /// let mut primary = Primary::<BUFFER_SIZE>::new(sample_rate);
@@ -29,25 +29,25 @@ use rustc_hash::FxHashMap;
 ///
 /// assert_eq!(
 ///     primary.sample(vec![&mut clip_a, &mut clip_b, &mut track]).unwrap(),
-///     vec![0.1, 0.1, 0.2, 0.2],
+///     &[0.1, 0.1, 0.2, 0.2],
 /// );
 ///
 /// assert_eq!(
 ///     primary.sample(vec![&mut clip_a, &mut clip_b, &mut track]).unwrap(),
-///     vec![0.3, 0.3, 0.4, 0.4],
+///     &[0.3, 0.3, 0.4, 0.4],
 /// );
 ///
 /// assert_eq!(
 ///     primary.sample(vec![&mut clip_a, &mut clip_b, &mut track]).unwrap(),
-///     vec![0.0, 0.0, 0.0, 0.0],
+///     &[0.0, 0.0, 0.0, 0.0],
 /// );
 /// ```
 pub struct Primary<const BUFFER_SIZE: usize> {
-    buffer: [Signal; BUFFER_SIZE],
-    sample_rate: usize,
+    buffer: [f32; BUFFER_SIZE],
+    /// sample rate field used for sampling
+    pub sample_rate: usize,
     monitored_sources: Vec<usize>,
     output_mode: OutputMode,
-    // tracker: BasicTracker<SOURCES_SIZE>,
     tracker: Box<dyn Tracker>,
 }
 
@@ -74,13 +74,7 @@ pub enum Error {
 impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
     /// Create new Primary with a default tracker
     pub fn new(sample_rate: usize) -> Self {
-        Primary {
-            buffer: [Signal::silence(); BUFFER_SIZE],
-            sample_rate,
-            monitored_sources: vec![],
-            output_mode: OutputMode::Stereo,
-            tracker: Box::new(DynamicTracker::new()),
-        }
+        Primary::with_tracker(Box::new(DynamicTracker::new()), sample_rate)
     }
 
     /// Create a new Primary with a supplied tracker
@@ -93,7 +87,7 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
     /// ```
     pub fn with_tracker(tracker: Box<dyn Tracker>, sample_rate: usize) -> Self {
         Primary {
-            buffer: [Signal::silence(); BUFFER_SIZE],
+            buffer: [0.0; BUFFER_SIZE],
             sample_rate,
             monitored_sources: vec![],
             output_mode: OutputMode::Stereo,
@@ -127,7 +121,10 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
     }
 
     /// Sample multiple sources based on their dependencies into a single output vec
-    pub fn sample(&mut self, unmapped_sources: Vec<&mut dyn Source>) -> Result<Vec<Point>, Error> {
+    pub fn sample(
+        &mut self,
+        unmapped_sources: Vec<&mut dyn Source>,
+    ) -> Result<&[Point; BUFFER_SIZE], Error> {
         let mut sources = FxHashMap::<usize, &mut dyn Source>::default();
         let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
@@ -148,40 +145,35 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
         }
 
         let sample_rate = self.sample_rate;
+        let loop_size = match self.output_mode {
+            OutputMode::Mono => BUFFER_SIZE,
+            OutputMode::Stereo => BUFFER_SIZE / 2,
+        };
 
-        for i in 0..BUFFER_SIZE {
+        for i in 0..loop_size {
             for source in sorted_sources.iter_mut() {
                 source.sample(self, sample_rate);
             }
 
-            let signals: Vec<&Signal> = self
-                .monitored_sources
-                .iter()
-                .filter_map(|&k| self.get_signal(k))
-                .collect();
+            let mut signals = Vec::with_capacity(self.monitored_sources.len());
+            for &key in self.monitored_sources.iter() {
+                signals.push(self.get_signal(key).ok_or(Error::MissingMonitor)?);
+            }
 
-            self.buffer[i] = Signal::mix(&signals);
-        }
-
-        let mut output = Vec::with_capacity(BUFFER_SIZE * 2);
-
-        for signal in self.buffer {
             match self.output_mode {
                 OutputMode::Mono => {
-                    let point = signal.sum_points();
-                    output.push(point);
+                    self.buffer[i] = Signal::mix(&signals).sum_points();
                 }
                 OutputMode::Stereo => {
-                    let left = signal.get_point();
-                    let right = signal.get_right_point().unwrap_or(signal.get_point());
-
-                    output.push(*left);
-                    output.push(*right);
+                    let signal = Signal::mix(&signals);
+                    self.buffer[i * 2] = *signal.get_point();
+                    self.buffer[i * 2 + 1] =
+                        *signal.get_right_point().unwrap_or(signal.get_point());
                 }
-            }
+            };
         }
 
-        Ok(output)
+        Ok(&self.buffer)
     }
 }
 
@@ -254,7 +246,7 @@ mod tests {
                 &mut track_c,
                 &mut track_d,
             ]),
-            Ok(vec![0.1, 0.2, 0.3, 0.4, 0.5]),
+            Ok(&[0.1, 0.2, 0.3, 0.4, 0.5]),
         );
     }
 
@@ -294,5 +286,15 @@ mod tests {
             primary.sample(vec![&mut track_a, &mut track_b]),
             Err(Error::CyclicDependencies),
         );
+    }
+
+    #[test]
+    fn test_circular_missing_monitor_failure() {
+        let mut primary = Primary::<2>::new(48_000);
+        let track = Track::new(&mut primary);
+
+        primary.add_monitor(&track);
+
+        assert_eq!(primary.sample(vec![]), Err(Error::MissingMonitor),);
     }
 }

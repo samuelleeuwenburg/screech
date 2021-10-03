@@ -94,17 +94,17 @@ mod tests {
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.0, 0.1, 0.2, 0.3, 0.4]
+            &[0.0, 0.1, 0.2, 0.3, 0.4]
         );
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.5, 0.6, 0.7, 0.8, 0.0]
+            &[0.5, 0.6, 0.7, 0.8, 0.0]
         );
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.1, 0.2, 0.3, 0.4, 0.5]
+            &[0.1, 0.2, 0.3, 0.4, 0.5]
         );
     }
 
@@ -120,11 +120,11 @@ mod tests {
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.1, 0.2]
+            &[0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.1, 0.2]
         );
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.3, 0.4, 0.0, 0.1, 0.2, 0.3, 0.4, 0.0]
+            &[0.3, 0.4, 0.0, 0.1, 0.2, 0.3, 0.4, 0.0]
         );
     }
 
@@ -140,12 +140,12 @@ mod tests {
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0]
+            &[0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0]
         );
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         );
     }
 }

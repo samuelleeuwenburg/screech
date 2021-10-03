@@ -1,10 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use screech::basic::{Oscillator, Track};
-use screech::core::Primary;
+use screech::core::{BasicTracker, Primary};
 use screech::traits::Source;
 
 fn primary(osc_count: usize, track_count: usize) -> Vec<f32> {
-    let mut primary = Primary::<480, 20000>::new(48_000);
+    let tracker = BasicTracker::<20000>::new();
+    let mut primary = Primary::<960>::with_tracker(Box::new(tracker), 48_000);
     let mut tracks: Vec<Track> = vec![];
     let mut oscs: Vec<Oscillator> = vec![];
 
@@ -30,7 +31,7 @@ fn primary(osc_count: usize, track_count: usize) -> Vec<f32> {
     sources.append(&mut tracks);
     sources.append(&mut oscs);
 
-    primary.sample(sources).unwrap()
+    primary.sample(sources).unwrap().to_vec()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
