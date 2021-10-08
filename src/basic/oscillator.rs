@@ -1,4 +1,4 @@
-use crate::core::{Point, Signal};
+use crate::core::{ExternalSignal, Point, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 /// oscillator.frequency = 1.0;
 /// oscillator.amplitude = 0.5;
 ///
-/// primary.add_monitor(&oscillator);
+/// primary.add_monitor(oscillator.output);
 /// primary.output_mono();
 ///
 /// assert_eq!(
@@ -31,6 +31,8 @@ use alloc::vec::Vec;
 /// );
 /// ```
 pub struct Oscillator {
+    /// main audio output
+    pub output: ExternalSignal,
     /// oscillator frequency per second
     pub frequency: f32,
     /// amplitude peak to peak centered around 0.0
@@ -38,7 +40,6 @@ pub struct Oscillator {
     /// for example an amplitude of `0.5` will generate a saw
     /// wave between `-0.5` and `0.5`
     pub amplitude: f32,
-    id: usize,
     value: Point,
     waveshape: Waveshape,
 }
@@ -54,7 +55,7 @@ impl Oscillator {
     /// frequency of `1.0` and an amplitute of `0.5`.
     pub fn new(tracker: &mut dyn Tracker) -> Self {
         Oscillator {
-            id: tracker.create_id(),
+            output: ExternalSignal::new(tracker.create_source_id(), 0),
             frequency: 1.0,
             amplitude: 0.5,
             value: 0.0,
@@ -77,7 +78,7 @@ impl Oscillator {
     /// oscillator.amplitude = 1.0;
     /// oscillator.output_triangle();
     ///
-    /// primary.add_monitor(&oscillator);
+    /// primary.add_monitor(oscillator.output);
     /// primary.output_mono();
     ///
     /// assert_eq!(
@@ -112,7 +113,7 @@ impl Oscillator {
     /// // 25% duty cycle
     /// oscillator.output_square(0.25);
     ///
-    /// primary.add_monitor(&oscillator);
+    /// primary.add_monitor(oscillator.output);
     /// primary.output_mono();
     ///
     /// assert_eq!(
@@ -140,7 +141,7 @@ impl Oscillator {
     /// oscillator.amplitude = 1.0;
     /// oscillator.output_saw();
     ///
-    /// primary.add_monitor(&oscillator);
+    /// primary.add_monitor(oscillator.output);
     /// primary.output_mono();
     ///
     /// assert_eq!(
@@ -155,9 +156,10 @@ impl Oscillator {
         self.waveshape = Waveshape::Saw;
         self
     }
+}
 
-    /// Render the next real time signal
-    pub fn step(&mut self, sample_rate: usize) -> Signal {
+impl Source for Oscillator {
+    fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize) {
         // peak to peak conversion of amplitude
         let peak_to_peak = self.amplitude * 2.0;
 
@@ -191,17 +193,11 @@ impl Oscillator {
             self.value -= peak_to_peak;
         }
 
-        Signal::point(point)
-    }
-}
-
-impl Source for Oscillator {
-    fn sample(&mut self, sources: &mut dyn Tracker, sample_rate: usize) {
-        sources.set_signal(self.id, self.step(sample_rate));
+        sources.set_signal(&self.output, Signal::point(point));
     }
 
-    fn get_id(&self) -> usize {
-        self.id
+    fn get_source_id(&self) -> &usize {
+        self.output.get_source_id()
     }
 
     fn get_sources(&self) -> Vec<usize> {
@@ -222,7 +218,7 @@ mod tests {
         oscillator.frequency = 1.0;
         oscillator.amplitude = 0.25;
 
-        primary.add_monitor(&oscillator);
+        primary.add_monitor(oscillator.output);
         primary.output_mono();
 
         assert_eq!(
@@ -242,7 +238,7 @@ mod tests {
         oscillator.frequency = 1.5;
         oscillator.amplitude = 0.5;
 
-        primary.add_monitor(&oscillator);
+        primary.add_monitor(oscillator.output);
         primary.output_mono();
 
         assert_eq!(

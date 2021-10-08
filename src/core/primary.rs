@@ -1,5 +1,5 @@
 use crate::core::graph::{topological_sort, Error as GraphError};
-use crate::core::{DynamicTracker, Point, Signal};
+use crate::core::{DynamicTracker, ExternalSignal, Point, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::boxed::Box;
 use alloc::vec;
@@ -23,9 +23,9 @@ use rustc_hash::FxHashMap;
 /// let mut clip_b = Clip::new(&mut primary, Stream::from_points(vec![0.0, 0.0, 0.1, 0.3]));
 /// let mut track = Track::new(&mut primary);
 ///
-/// track.add_input(&clip_a);
-/// track.add_input(&clip_b);
-/// primary.add_monitor(&track);
+/// track.add_input(clip_a.output);
+/// track.add_input(clip_b.output);
+/// primary.add_monitor(track.output);
 ///
 /// assert_eq!(
 ///     primary.sample(vec![&mut clip_a, &mut clip_b, &mut track]).unwrap(),
@@ -46,7 +46,7 @@ pub struct Primary<const BUFFER_SIZE: usize> {
     buffer: [f32; BUFFER_SIZE],
     /// sample rate field used for sampling
     pub sample_rate: usize,
-    monitored_sources: Vec<usize>,
+    monitored_sources: Vec<ExternalSignal>,
     output_mode: OutputMode,
     tracker: Box<dyn Tracker>,
 }
@@ -82,7 +82,7 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
     /// ```
     /// use screech::core::{Primary, BasicTracker};
     ///
-    /// let tracker = BasicTracker::<256>::new();
+    /// let tracker = BasicTracker::<256, 8>::new();
     /// let primary = Primary::<128>::with_tracker(Box::new(tracker), 48_000);
     /// ```
     pub fn with_tracker(tracker: Box<dyn Tracker>, sample_rate: usize) -> Self {
@@ -96,15 +96,14 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
     }
 
     /// add source to the final output
-    pub fn add_monitor(&mut self, source: &dyn Source) -> &mut Self {
-        self.monitored_sources.push(source.get_id());
+    pub fn add_monitor(&mut self, source: ExternalSignal) -> &mut Self {
+        self.monitored_sources.push(source);
         self
     }
 
     /// remove source from final output
-    pub fn remove_monitor(&mut self, source: &dyn Source) -> &mut Self {
-        let a = source.get_id();
-        self.monitored_sources.retain(|&b| a != b);
+    pub fn remove_monitor(&mut self, source: &ExternalSignal) -> &mut Self {
+        self.monitored_sources.retain(|b| source != b);
         self
     }
 
@@ -129,8 +128,8 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
         let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
         for source in unmapped_sources {
-            graph.insert(source.get_id(), source.get_sources());
-            sources.insert(source.get_id(), source);
+            graph.insert(*source.get_source_id(), source.get_sources());
+            sources.insert(*source.get_source_id(), source);
         }
 
         let sorted = topological_sort(graph).map_err(|e| match e {
@@ -156,8 +155,11 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
             }
 
             let mut signals = Vec::with_capacity(self.monitored_sources.len());
-            for &key in self.monitored_sources.iter() {
-                signals.push(self.get_signal(key).ok_or(Error::MissingMonitor)?);
+            for external_signal in self.monitored_sources.iter() {
+                signals.push(
+                    self.get_signal(&external_signal)
+                        .ok_or(Error::MissingMonitor)?,
+                );
             }
 
             match self.output_mode {
@@ -178,20 +180,20 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
 }
 
 impl<const A: usize> Tracker for Primary<A> {
-    fn create_id(&mut self) -> usize {
-        self.tracker.create_id()
+    fn create_source_id(&mut self) -> usize {
+        self.tracker.create_source_id()
     }
 
-    fn clear_id(&mut self, id: usize) {
-        self.tracker.clear_id(id)
+    fn clear_source(&mut self, external_signal: usize) {
+        self.tracker.clear_source(external_signal)
     }
 
-    fn get_signal(&self, id: usize) -> Option<&Signal> {
-        self.tracker.get_signal(id)
+    fn get_signal(&self, external_signal: &ExternalSignal) -> Option<&Signal> {
+        self.tracker.get_signal(external_signal)
     }
 
-    fn set_signal(&mut self, id: usize, signal: Signal) {
-        self.tracker.set_signal(id, signal);
+    fn set_signal(&mut self, external_signal: &ExternalSignal, signal: Signal) {
+        self.tracker.set_signal(external_signal, signal);
     }
 }
 
@@ -220,18 +222,18 @@ mod tests {
         let mut track_c = Track::new(&mut primary);
         let mut track_d = Track::new(&mut primary);
 
-        track_a.add_input(&clip_a).add_input(&clip_b);
+        track_a.add_input(clip_a.output).add_input(clip_b.output);
 
-        track_b.add_input(&track_a).add_input(&clip_c);
+        track_b.add_input(track_a.output).add_input(clip_c.output);
 
         track_c
-            .add_input(&track_b)
-            .add_input(&clip_d)
-            .add_input(&clip_e);
+            .add_input(track_b.output)
+            .add_input(clip_d.output)
+            .add_input(clip_e.output);
 
-        track_d.add_input(&track_c);
+        track_d.add_input(track_c.output);
 
-        primary.add_monitor(&track_d);
+        primary.add_monitor(track_d.output);
         primary.output_mono();
 
         assert_eq!(
@@ -259,11 +261,11 @@ mod tests {
         let mut track = Track::new(&mut primary);
 
         track
-            .add_input(&clip_a)
-            .add_input(&clip_b)
-            .add_input(&clip_c);
+            .add_input(clip_a.output)
+            .add_input(clip_b.output)
+            .add_input(clip_c.output);
 
-        primary.add_monitor(&track);
+        primary.add_monitor(track.output);
 
         assert_eq!(
             primary.sample(vec![&mut clip_a, &mut track]),
@@ -277,10 +279,12 @@ mod tests {
         let mut track_a = Track::new(&mut primary);
         let mut track_b = Track::new(&mut primary);
 
-        track_a.add_input(&track_b);
-        track_b.add_input(&track_a);
+        track_a.add_input(track_b.output);
+        track_b.add_input(track_a.output);
 
-        primary.add_monitor(&track_a).add_monitor(&track_b);
+        primary
+            .add_monitor(track_a.output)
+            .add_monitor(track_b.output);
 
         assert_eq!(
             primary.sample(vec![&mut track_a, &mut track_b]),
@@ -293,7 +297,7 @@ mod tests {
         let mut primary = Primary::<2>::new(48_000);
         let track = Track::new(&mut primary);
 
-        primary.add_monitor(&track);
+        primary.add_monitor(track.output);
 
         assert_eq!(primary.sample(vec![]), Err(Error::MissingMonitor),);
     }

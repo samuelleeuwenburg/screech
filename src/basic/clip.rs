@@ -1,12 +1,13 @@
-use crate::core::{Signal, Stream};
+use crate::core::{ExternalSignal, Signal, Stream};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 
 /// Most basic building block for non-generated sound
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Clip {
-    id: usize,
+    /// main audio output
+    pub output: ExternalSignal,
     /// audio data for the stream
     pub audio: Stream,
     /// current position of playback
@@ -29,16 +30,17 @@ impl Clip {
     /// Create new clip from a [`Signal`]
     pub fn new(tracker: &mut dyn Tracker, audio: Stream) -> Self {
         Clip {
-            id: tracker.create_id(),
+            output: ExternalSignal::new(tracker.create_source_id(), 0),
             audio,
             speed: 1.0,
             position: 0,
             play_style: PlayStyle::OneShot,
         }
     }
+}
 
-    /// Render the next real time signal
-    pub fn step(&mut self) -> Signal {
+impl Source for Clip {
+    fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
         let audio_length = self.audio.len();
 
         let signal = if self.position >= audio_length {
@@ -57,17 +59,11 @@ impl Clip {
             self.position + 1
         };
 
-        signal
-    }
-}
-
-impl Source for Clip {
-    fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
-        sources.set_signal(self.id, self.step());
+        sources.set_signal(&self.output, signal);
     }
 
-    fn get_id(&self) -> usize {
-        self.id
+    fn get_source_id(&self) -> &usize {
+        self.output.get_source_id()
     }
 
     fn get_sources(&self) -> Vec<usize> {
@@ -90,7 +86,7 @@ mod tests {
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
         );
         clip.play_style = PlayStyle::Loop;
-        primary.add_monitor(&clip).output_mono();
+        primary.add_monitor(clip.output).output_mono();
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
@@ -116,7 +112,7 @@ mod tests {
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
         );
         clip.play_style = PlayStyle::Loop;
-        primary.add_monitor(&clip).output_mono();
+        primary.add_monitor(clip.output).output_mono();
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),
@@ -136,7 +132,7 @@ mod tests {
             Stream::from_points(vec![0.0, 0.1, 0.2, 0.3, 0.4]),
         );
         clip.play_style = PlayStyle::OneShot;
-        primary.add_monitor(&clip).output_mono();
+        primary.add_monitor(clip.output).output_mono();
 
         assert_eq!(
             primary.sample(vec![&mut clip]).unwrap(),

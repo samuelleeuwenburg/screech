@@ -1,4 +1,4 @@
-use crate::core::Signal;
+use crate::core::{ExternalSignal, Signal};
 use crate::traits::Tracker;
 use rustc_hash::FxHashMap;
 
@@ -15,11 +15,11 @@ use rustc_hash::FxHashMap;
 /// let track = Track::new(&mut tracker);
 ///
 /// // the resulting id is irrelevant as long as it is unique
-/// assert_eq!(osc.get_id() != track.get_id(), true);
+/// assert_eq!(osc.get_source_id() != track.get_source_id(), true);
 /// ```
 pub struct DynamicTracker {
     id_position: usize,
-    signals: FxHashMap<usize, Signal>,
+    signals: FxHashMap<usize, FxHashMap<usize, Signal>>,
 }
 
 impl DynamicTracker {
@@ -33,22 +33,33 @@ impl DynamicTracker {
 }
 
 impl Tracker for DynamicTracker {
-    fn create_id(&mut self) -> usize {
-        // @TODO: this is pretty naive, best keep track of ids somewhere in a vec
+    fn create_source_id(&mut self) -> usize {
+        // @TODO: this is pretty naive, best keep track of ids somewhere
         let id = self.id_position;
         self.id_position += 1;
         id
     }
 
-    fn clear_id(&mut self, id: usize) {
+    fn clear_source(&mut self, id: usize) {
         self.signals.remove(&id);
     }
 
-    fn get_signal(&self, id: usize) -> Option<&Signal> {
-        self.signals.get(&id)
+    fn get_signal(&self, e: &ExternalSignal) -> Option<&Signal> {
+        self.signals
+            .get(&e.get_source_id())
+            .and_then(|signals| signals.get(&e.get_signal_id()))
     }
 
-    fn set_signal(&mut self, id: usize, signal: Signal) {
-        self.signals.insert(id, signal);
+    fn set_signal(&mut self, e: &ExternalSignal, signal: Signal) {
+        match self.signals.get_mut(&e.get_source_id()) {
+            Some(signals) => {
+                signals.insert(*e.get_signal_id(), signal);
+            }
+            None => {
+                let mut map = FxHashMap::default();
+                map.insert(*e.get_signal_id(), signal);
+                self.signals.insert(*e.get_source_id(), map);
+            }
+        }
     }
 }

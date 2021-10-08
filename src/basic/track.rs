@@ -1,16 +1,19 @@
 use crate::core::point::{amplify, Point};
-use crate::core::Signal;
+use crate::core::{ExternalSignal, Signal};
 use crate::traits::{Source, Tracker};
 use alloc::vec;
 use alloc::vec::Vec;
 
 /// Standard track with panning and volume control
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Track {
-    id: usize,
-    inputs: Vec<usize>,
-    gain_cv: Option<usize>,
-    panning_cv: Option<usize>,
+    inputs: Vec<ExternalSignal>,
+    /// main audio output
+    pub output: ExternalSignal,
+    /// gain cv modulation source
+    pub gain_cv: Option<ExternalSignal>,
+    /// panning cv modulation source
+    pub panning_cv: Option<ExternalSignal>,
     /// Gain setting in dBs
     pub gain: f32,
     /// Panning setting, -1.0 to 1.0 for -114dB and +6dB respectively.
@@ -22,70 +25,54 @@ impl Track {
     /// Create a new track with a unique `id`
     pub fn new(tracker: &mut dyn Tracker) -> Track {
         Track {
-            id: tracker.create_id(),
+            output: ExternalSignal::new(tracker.create_source_id(), 0),
             inputs: vec![],
-            gain: 0.0,
             gain_cv: None,
-            panning: 0.0,
             panning_cv: None,
+            gain: 0.0,
+            panning: 0.0,
         }
     }
 
     /// add source to the input, supports multiple inputs
-    pub fn add_input(&mut self, source: &dyn Source) -> &mut Self {
-        self.inputs.push(source.get_id());
+    pub fn add_input(&mut self, source: ExternalSignal) -> &mut Self {
+        self.inputs.push(source);
         self
     }
 
     /// remove source from input
-    pub fn remove_input(&mut self, source: &dyn Source) -> &mut Self {
-        let a = source.get_id();
-        self.inputs.retain(|&b| a != b);
+    pub fn remove_input(&mut self, source: &ExternalSignal) -> &mut Self {
+        self.inputs.retain(|b| source != b);
         self
     }
+}
 
-    /// Set gain between `1.0` and `-1.0` by external source
-    ///
-    /// `0.9` is set to unity gain, for `0.1` increment the level increases by 6dB.
-    /// For example setting a gain of `1.0` gives +6dB of amplification
-    /// and setting a gain of `-1.0` would result in -114dB
-    ///
-    pub fn set_gain_cv(&mut self, cv: &dyn Source) -> &mut Self {
-        self.gain_cv = Some(cv.get_id());
-        self
-    }
+impl Source for Track {
+    fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
+        let inputs: Vec<&Signal> = self
+            .inputs
+            .iter()
+            .filter_map(|e| sources.get_signal(e))
+            .collect();
 
-    /// Remove gain cv source
-    pub fn unset_gain_cv(&mut self) -> &mut Self {
-        self.gain_cv = None;
-        self
-    }
+        let gain = self
+            .gain_cv
+            .and_then(|e| sources.get_signal(&e))
+            .map(|s| s.sum_points())
+            .unwrap_or(0.9);
 
-    /// Set left and right channel panning by external source id
-    ///
-    /// `0.0` is center resulting in no amplification,
-    /// `-1.0` is left channel +6dB, right channel -114dB,
-    /// `1.0` is left channel -114dB, right channel +6dB
-    ///
-    pub fn set_panning_cv(&mut self, cv: &dyn Source) -> &mut Self {
-        self.panning_cv = Some(cv.get_id());
-        self
-    }
+        let panning = self
+            .panning_cv
+            .and_then(|e| sources.get_signal(&e))
+            .map(|s| s.sum_points())
+            .unwrap_or(0.0);
 
-    /// Remove panning cv source
-    pub fn unset_panning_cv(&mut self) -> &mut Self {
-        self.panning_cv = None;
-        self
-    }
+        let mixed = Signal::silence().mix_into(&inputs);
 
-    /// Render the next real time signal
-    pub fn step(&mut self, inputs: &[&Signal], gain: f32, panning: f32) -> Signal {
-        let signal = Signal::silence().mix_into(&inputs);
-
-        if gain == 0.9 && panning == 0.0 {
-            signal
+        let signal = if gain == 0.9 && panning == 0.0 {
+            mixed
         } else {
-            signal.map_to_stereo(|left, right| {
+            mixed.map_to_stereo(|left, right| {
                 (
                     amplify(
                         left,
@@ -97,47 +84,24 @@ impl Track {
                     ),
                 )
             })
-        }
-    }
-}
+        };
 
-impl Source for Track {
-    fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
-        let inputs: Vec<&Signal> = self
-            .inputs
-            .iter()
-            .filter_map(|&k| sources.get_signal(k))
-            .collect();
-
-        let gain = self
-            .gain_cv
-            .and_then(|k| sources.get_signal(k))
-            .map(|s| s.sum_points())
-            .unwrap_or(0.9);
-
-        let panning = self
-            .panning_cv
-            .and_then(|k| sources.get_signal(k))
-            .map(|s| s.sum_points())
-            .unwrap_or(0.0);
-
-        let signal = self.step(&inputs, gain, panning);
-        sources.set_signal(self.id, signal);
+        sources.set_signal(&self.output, signal);
     }
 
-    fn get_id(&self) -> usize {
-        self.id
+    fn get_source_id(&self) -> &usize {
+        self.output.get_source_id()
     }
 
     fn get_sources(&self) -> Vec<usize> {
-        let mut sources = self.inputs.clone();
+        let mut sources: Vec<usize> = self.inputs.iter().map(|e| *e.get_source_id()).collect();
 
-        if let Some(id) = self.gain_cv {
-            sources.push(id);
+        if let Some(e) = &self.gain_cv {
+            sources.push(*e.get_source_id());
         }
 
-        if let Some(id) = self.panning_cv {
-            sources.push(id);
+        if let Some(e) = &self.panning_cv {
+            sources.push(*e.get_source_id());
         }
 
         sources
@@ -188,9 +152,9 @@ mod tests {
         let mut clip2 = Clip::new(&mut primary, Stream::from_points(vec![0.1, 0.0, 0.1, 0.0]));
         let mut track = Track::new(&mut primary);
 
-        track.add_input(&clip1);
-        track.add_input(&clip2);
-        primary.add_monitor(&track);
+        track.add_input(clip1.output);
+        track.add_input(clip2.output);
+        primary.add_monitor(track.output);
 
         assert_eq!(
             primary
@@ -208,9 +172,9 @@ mod tests {
         let mut track = Track::new(&mut primary);
 
         lfo.frequency = 24_000.0;
-        track.add_input(&clip);
-        track.set_gain_cv(&lfo);
-        primary.add_monitor(&track);
+        track.add_input(clip.output);
+        track.gain_cv = Some(lfo.output);
+        primary.add_monitor(track.output);
 
         assert_eq!(
             primary
@@ -240,10 +204,10 @@ mod tests {
         lfo.amplitude = 1.0;
         lfo.output_square(0.5);
 
-        track.add_input(&clip);
-        track.set_panning_cv(&lfo);
+        track.add_input(clip.output);
+        track.panning_cv = Some(lfo.output);
 
-        primary.add_monitor(&track);
+        primary.add_monitor(track.output);
 
         assert_eq!(
             primary
