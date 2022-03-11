@@ -46,12 +46,12 @@ impl Tracker for DynamicTracker {
 
     fn get_signal(&self, e: &ExternalSignal) -> Option<&Signal> {
         self.signals
-            .get(&e.get_source_id())
-            .and_then(|signals| signals.get(&e.get_signal_id()))
+            .get(e.get_source_id())
+            .and_then(|signals| signals.get(e.get_signal_id()))
     }
 
     fn set_signal(&mut self, e: &ExternalSignal, signal: Signal) {
-        match self.signals.get_mut(&e.get_source_id()) {
+        match self.signals.get_mut(e.get_source_id()) {
             Some(signals) => {
                 signals.insert(*e.get_signal_id(), signal);
             }

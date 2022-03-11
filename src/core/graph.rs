@@ -42,7 +42,7 @@ pub fn topological_sort(nodes: FxHashMap<usize, Vec<usize>>) -> Result<Vec<usize
     let mut marks = FxHashMap::<usize, Mark>::default();
     let mut result = vec![];
 
-    for (&node, _) in &nodes {
+    for &node in nodes.keys() {
         if marks.get(&node).is_none() {
             visit(&nodes, &mut marks, &mut result, node)?;
         }

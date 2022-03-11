@@ -328,27 +328,3 @@ impl Signal {
         points.iter().map(|p| Signal::point(*p)).collect()
     }
 }
-
-// impl FromPoints<f32, Signal> for Signal {
-//     fn from_points(points: Vec<f32>) -> Signal {
-//         Signal::Mono(Stream::from_points(points))
-//     }
-// }
-//
-// impl FromPoints<i32, Signal> for Signal {
-//     fn from_points(points: Vec<i32>) -> Signal {
-//         Signal::Mono(Stream::from_points(points))
-//     }
-// }
-//
-// impl FromPoints<i16, Signal> for Signal {
-//     fn from_points(points: Vec<i16>) -> Signal {
-//         Signal::Mono(Stream::from_points(points))
-//     }
-// }
-//
-// impl FromPoints<u8, Signal> for Signal {
-//     fn from_points(points: Vec<u8>) -> Signal {
-//         Signal::Mono(Stream::from_points(points))
-//     }
-// }

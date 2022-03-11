@@ -9,6 +9,8 @@ use core::cmp;
 pub enum StreamErr {
     /// Tried to create slice with out of bounds range
     SliceOutOfBounds,
+    /// Bad factor for resampling, 0.0 or lower
+    ResampleBadFactor,
 }
 
 /// Enum representing a stream of audio data
@@ -62,6 +64,17 @@ impl Stream {
             Stream::Points(points) => points.len(),
             Stream::Fixed(_) => 1,
         }
+    }
+
+    /// Returns true of false based on the internal stream length
+    /// ```
+    /// use screech::core::Stream;
+    ///
+    /// assert_eq!(Stream::empty(4).is_empty(), false);
+    /// assert_eq!(Stream::empty(0).is_empty(), true);
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     //@TODO: pub fn shrink(self, usize) -> Self
@@ -299,6 +312,83 @@ impl Stream {
         }
 
         Stream::from_points(points)
+    }
+
+    /// Resample using [linear interpolation](https://en.wikipedia.org/wiki/Linear_interpolation)
+    ///
+    /// ```
+    /// use screech::traits::FromPoints;
+    /// use screech::core::Stream;
+    ///
+    /// let stream = Stream::from_points(vec![0.0, 0.5, 1.0, 0.5, 0.0]);
+    ///
+    /// // should preserve the samples at 1.0
+    /// assert_eq!(
+    ///     stream.clone().resample_linear(1.0).unwrap().get_points().unwrap(),
+    ///     stream.clone().get_points().unwrap(),
+    /// );
+    ///
+    /// assert_eq!(
+    ///     stream.clone().resample_linear(2.0).unwrap().get_points().unwrap(),
+    ///     &[0.0, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0.0]
+    /// );
+    ///
+    /// assert_eq!(
+    ///     stream.clone().resample_linear(0.5).unwrap().get_points().unwrap(),
+    ///     &[0.0, 1.0, 0.0]
+    /// );
+    ///
+    /// assert_eq!(
+    ///     stream.clone().resample_linear(0.8).unwrap().get_points().unwrap(),
+    ///     &[0.0, 0.625, 0.75, 0.125]
+    /// );
+    ///
+    /// let stream2 = Stream::from_points(
+    ///     vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    /// );
+    ///
+    /// assert_eq!(
+    ///     stream2.clone().resample_linear(0.5).unwrap().get_points().unwrap(),
+    ///     &[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    /// );
+    ///
+    /// assert_eq!(
+    ///     stream2.clone().resample_linear(0.2).unwrap().get_points().unwrap(),
+    ///     &[0.0, 0.5, 1.0]
+    /// );
+    ///
+    /// ```
+    pub fn resample_linear(self, factor: f32) -> Result<Self, StreamErr> {
+        if factor <= 0.0 {
+            return Err(StreamErr::ResampleBadFactor);
+        }
+
+        let max_loop_size = (self.len() as f32 * factor).ceil() as usize;
+        let mut points = vec![];
+
+        for index in 0..max_loop_size {
+            let position_source = self.len() as f32 * (index as f32 / (self.len() as f32 * factor));
+            let point_index = position_source.floor() as usize;
+            let position_points = position_source - point_index as f32;
+
+            match (self.get_point(point_index), self.get_point(point_index + 1)) {
+                (Some(a), Some(b)) => {
+                    let point = a + (b - a) * position_points;
+                    points.push(point);
+                }
+                (Some(a), None) => {
+                    if position_points == 0.0 {
+                        // no final sample to compare with
+                        // however the position aligns _exactly_ with the first sample
+                        // so we preserve it either way
+                        points.push(*a);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        Ok(Stream::from_points(points))
     }
 }
 

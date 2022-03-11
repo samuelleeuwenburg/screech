@@ -157,7 +157,7 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
             let mut signals = Vec::with_capacity(self.monitored_sources.len());
             for external_signal in self.monitored_sources.iter() {
                 signals.push(
-                    self.get_signal(&external_signal)
+                    self.get_signal(external_signal)
                         .ok_or(Error::MissingMonitor)?,
                 );
             }
@@ -169,8 +169,9 @@ impl<const BUFFER_SIZE: usize> Primary<BUFFER_SIZE> {
                 OutputMode::Stereo => {
                     let signal = Signal::mix(&signals);
                     self.buffer[i * 2] = *signal.get_point();
-                    self.buffer[i * 2 + 1] =
-                        *signal.get_right_point().unwrap_or(signal.get_point());
+                    self.buffer[i * 2 + 1] = *signal
+                        .get_right_point()
+                        .unwrap_or_else(|| signal.get_point());
                 }
             };
         }

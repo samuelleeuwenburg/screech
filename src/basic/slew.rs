@@ -54,12 +54,10 @@ impl Slew {
             } else {
                 rise
             }
+        } else if rise > max_increase {
+            max_increase
         } else {
-            if rise > max_increase {
-                max_increase
-            } else {
-                rise
-            }
+            rise
         };
 
         // determine sign
