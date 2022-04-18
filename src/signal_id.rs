@@ -1,14 +1,14 @@
 /// Used for pointing to external signals usually stored inside of a Tracker
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct ExternalSignal {
+pub struct SignalId {
     source_id: usize,
     signal_id: usize,
 }
 
-impl ExternalSignal {
+impl SignalId {
     /// Create new external signal
     pub fn new(source_id: usize, signal_id: usize) -> Self {
-        ExternalSignal {
+        SignalId {
             source_id,
             signal_id,
         }

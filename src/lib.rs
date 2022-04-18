@@ -2,16 +2,19 @@
 //!
 //! **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
-#![no_std]
+// #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
 
-/// Core data structures
-pub mod core;
-
-/// Common traits use throughout the library
+mod graph;
+mod primary;
+mod signal;
+mod signal_id;
+mod tracker;
 pub mod traits;
 
-/// Simple audio building blocks to build with
-pub mod basic;
+pub use primary::Primary;
+pub use signal::Signal;
+pub use signal_id::SignalId;
+pub use tracker::{BasicTracker, DynamicTracker};

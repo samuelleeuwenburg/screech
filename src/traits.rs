@@ -1,4 +1,4 @@
-use crate::core::{ExternalSignal, Signal};
+use crate::{Signal, SignalId};
 use alloc::vec::Vec;
 
 /// To implement [`Source`] means something can be a source of sound,
@@ -34,6 +34,8 @@ pub trait Source {
 /// take a `&mut dyn Tracker` as their first argument
 /// during construction to generate a unique ID
 pub trait Tracker {
+    fn get_buffer_size(&self) -> &usize;
+
     /// Return a unique ID
     fn create_source_id(&mut self) -> usize;
 
@@ -41,10 +43,15 @@ pub trait Tracker {
     fn clear_source(&mut self, id: usize);
 
     /// get signal for id
-    fn get_signal(&self, external_signal: &ExternalSignal) -> Option<&Signal>;
+    fn get_signal(&self, signal: &SignalId) -> Option<&Signal>;
 
     /// set signal for id
-    fn set_signal(&mut self, external_signal: &ExternalSignal, signal: Signal);
+    fn get_mut_signal(&mut self, signal: &SignalId) -> Option<&mut Signal>;
+
+    /// inits empty buffer for signal
+    fn init_buffer(&mut self, signal: &SignalId);
+
+    fn resize_buffers(&mut self, buffer_size: usize);
 }
 
 /// Trait to implement conversion from a slice of sized types to a generic
