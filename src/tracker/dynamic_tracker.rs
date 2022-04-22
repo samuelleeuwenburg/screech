@@ -1,5 +1,7 @@
 use crate::traits::Tracker;
-use crate::{Signal, SignalId};
+use crate::{Input, Output, Signal};
+use alloc::vec;
+use alloc::vec::Vec;
 use rustc_hash::FxHashMap;
 
 /// Basic dynamically sized tracker for the creation of unique ids
@@ -20,7 +22,8 @@ use rustc_hash::FxHashMap;
 pub struct DynamicTracker {
     id_position: usize,
     buffer_size: usize,
-    signals: FxHashMap<usize, FxHashMap<usize, Signal>>,
+    inputs: FxHashMap<usize, FxHashMap<&'static str, Vec<Output>>>,
+    signals: FxHashMap<usize, FxHashMap<&'static str, Signal>>,
 }
 
 impl DynamicTracker {
@@ -29,6 +32,7 @@ impl DynamicTracker {
         DynamicTracker {
             id_position: 0,
             buffer_size,
+            inputs: FxHashMap::default(),
             signals: FxHashMap::default(),
         }
     }
@@ -50,28 +54,86 @@ impl Tracker for DynamicTracker {
         self.signals.remove(&id);
     }
 
-    fn get_signal(&self, e: &SignalId) -> Option<&Signal> {
-        self.signals
-            .get(e.get_source_id())
-            .and_then(|signals| signals.get(e.get_signal_id()))
-    }
+    fn get_sources(&self, id: &usize) -> Vec<usize> {
+        let mut sources = vec![];
 
-    fn get_mut_signal(&mut self, e: &SignalId) -> Option<&mut Signal> {
-        self.signals
-            .get_mut(e.get_source_id())
-            .and_then(|signals| signals.get_mut(e.get_signal_id()))
-    }
-
-    fn init_buffer(&mut self, e: &SignalId) {
-        if let None = self.signals.get(e.get_source_id()) {
-            self.signals
-                .insert(*e.get_source_id(), FxHashMap::default());
+        if let Some(source) = self.inputs.get(id) {
+            for input in source.values() {
+                for output in input {
+                    sources.push(*output.get_source_id());
+                }
+            }
         }
 
-        let source = self.signals.get_mut(e.get_source_id()).unwrap();
-
-        source.insert(*e.get_signal_id(), Signal::empty(self.buffer_size));
+        sources
     }
 
-    fn resize_buffers(&mut self, buffer_size: usize) {}
+    fn get_output(&self, o: &Output) -> Option<&Signal> {
+        self.signals
+            .get(o.get_source_id())
+            .and_then(|signals| signals.get(o.get_signal_id()))
+    }
+
+    fn get_mut_output(&mut self, o: &Output) -> Option<&mut Signal> {
+        self.signals
+            .get_mut(o.get_source_id())
+            .and_then(|signals| signals.get_mut(o.get_signal_id()))
+    }
+
+    fn init_output(&mut self, o: &Output) {
+        if let None = self.signals.get(o.get_source_id()) {
+            self.signals
+                .insert(*o.get_source_id(), FxHashMap::default());
+        }
+
+        let source = self.signals.get_mut(o.get_source_id()).unwrap();
+
+        source.insert(o.get_signal_id(), Signal::empty(self.buffer_size));
+    }
+
+    fn init_input(&mut self, s: &Input) {
+        if let None = self.inputs.get(s.get_source_id()) {
+            self.inputs.insert(*s.get_source_id(), FxHashMap::default());
+        }
+
+        let input = self.inputs.get_mut(s.get_source_id()).unwrap();
+
+        input.insert(s.get_signal_id(), vec![]);
+    }
+
+    fn get_input(&self, s: &Input) -> Option<&Vec<Output>> {
+        self.inputs
+            .get(s.get_source_id())
+            .and_then(|signals| signals.get(s.get_signal_id()))
+    }
+
+    fn resize_buffers(&mut self, buffer_size: usize) {
+        self.buffer_size = buffer_size;
+
+        for (_, source) in self.signals.iter_mut() {
+            for (_, signal) in source.iter_mut() {
+                signal.samples.resize(self.buffer_size, 0.0);
+            }
+        }
+    }
+
+    fn connect_signal(&mut self, output: &Output, input: &Input) {
+        if let Some(input) = self
+            .inputs
+            .get_mut(input.get_source_id())
+            .and_then(|signals| signals.get_mut(input.get_signal_id()))
+        {
+            input.push(*output);
+        }
+    }
+
+    fn clear_connection(&mut self, output: &Output, input: &Input) {
+        if let Some(input) = self
+            .inputs
+            .get_mut(input.get_source_id())
+            .and_then(|signals| signals.get_mut(input.get_signal_id()))
+        {
+            input.retain(|o| o != output);
+        }
+    }
 }

@@ -3,7 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp;
 
-/// Enum representing a signal of audio data
+/// Struct containing audio samples
 #[derive(Clone)]
 pub struct Signal {
     /// sample buffer
@@ -30,10 +30,10 @@ impl Signal {
         }
     }
 
-    /// Mix multiple signals into a new stream
+    /// Mix multiple signals into a new signal
     ///
     /// **note** the size of the resulting signal is equal to
-    /// the longest signal in the `Vec`
+    /// the longest signal in the slice
     ///
     /// ```
     /// use screech::traits::FromPoints;
@@ -67,7 +67,7 @@ impl Signal {
         signal
     }
 
-    /// Same as mix, but mixes sources into the current signal
+    /// Same as [`Signal::mix`], but mixes sources into the current signal
     ///
     /// **note** the size of the signal will be unchanged
     ///
