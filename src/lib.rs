@@ -11,9 +11,14 @@ mod graph;
 mod signal;
 mod signal_id;
 mod tracker;
+
+/// common traits used throughout the library
 pub mod traits;
 
+/// Identifier used for keeping track of signals
 pub type Input = signal_id::SignalId;
+
+/// Identifier used for keeping track of signals
 pub type Output = signal_id::SignalId;
 
 pub use signal::Signal;
@@ -28,114 +33,6 @@ use signal_id::SignalId;
 use traits::{Source, Tracker};
 
 /// Main helper struct to render and manage relations between [`crate::traits::Source`] types.
-///
-/// ```
-/// use screech::traits::{FromPoints, Source, Tracker};
-/// use screech::{Screech, Input, Output, Signal, DynamicTracker};
-///
-/// struct Osc {
-///     pub id: usize,
-///     pub output: Output,
-///     voltage: f32,
-/// }
-///
-/// impl Osc {
-///     fn new(screech: &mut Screech) -> Self {
-///         let id = screech.create_source_id();
-///
-///         Osc {
-///             id,
-///             output: screech.init_output(&id, "output"),
-///             voltage: 0.0,
-///         }
-///     }
-/// }
-///
-/// struct Amp {
-///     pub id: usize,
-///     pub input: Input,
-///     pub output: Output,
-/// }
-///
-/// impl Amp {
-///     fn new(screech: &mut Screech) -> Self {
-///         let id = screech.create_source_id();
-///
-///         Amp {
-///             id,
-///             input: screech.init_input(&id, "input"),
-///             output: screech.init_output(&id, "output"),
-///         }
-///     }
-/// }
-///
-/// impl Source for Osc {
-///     fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
-///         let mut signal = sources.get_mut_output(&self.output).unwrap();
-///
-///         for s in signal.samples.iter_mut() {
-///             *s = self.voltage;
-///             self.voltage += 0.1;
-///
-///             if self.voltage >= 0.5 {
-///                 self.voltage = 0.0;
-///             }
-///         }
-///     }
-///
-///     fn get_source_id(&self) -> &usize {
-///         &self.id
-///     }
-/// }
-///
-/// impl Source for Amp {
-///     fn sample(&mut self, sources: &mut dyn Tracker, _sample_rate: usize) {
-///         for i in 0..*sources.get_buffer_size() {
-///             let mut signal = 0.0;
-///
-///             for input in sources.get_input(&self.input).unwrap().into_iter() {
-///                 let s = sources.get_output(&input)
-///                     .and_then(|o| o.samples.get(i))
-///                     .unwrap_or(&0.0);
-///
-///                 signal += s * 2.0;
-///             }
-///
-///             let output = sources.get_mut_output(&self.output).unwrap();
-///             output.samples[i] = signal;
-///         }
-///     }
-///
-///     fn get_source_id(&self) -> &usize {
-///         &self.id
-///     }
-/// }
-///
-/// let buffer_size = 4;
-/// let sample_rate = 48_000;
-///
-/// // setup entities
-/// let mut screech = Screech::new(buffer_size, sample_rate);
-/// let mut osc = Osc::new(&mut screech);
-/// let mut amp = Amp::new(&mut screech);
-///
-/// // setup connections
-/// screech.create_main_out("mono_out");
-/// screech.connect_signal(&osc.output, &amp.input);
-/// screech.connect_signal_to_main_out(&amp.output, "mono_out");
-///
-/// let mut sources = vec![&mut osc as &mut dyn Source, &mut amp as &mut dyn Source];
-///
-/// screech.sample(&mut sources).unwrap();
-/// assert_eq!(screech.get_main_out("mono_out").unwrap().samples, [0.0, 0.2, 0.4, 0.6]);
-///
-/// screech.sample(&mut sources).unwrap();
-/// assert_eq!(screech.get_main_out("mono_out").unwrap().samples, [0.8, 0.0, 0.2, 0.4]);
-///
-/// screech.sample(&mut sources).unwrap();
-/// assert_eq!(screech.get_main_out("mono_out").unwrap().samples, [0.6, 0.8, 0.0, 0.2]);
-///
-/// ```
 pub struct Screech {
     /// sample rate field used for sampling
     pub sample_rate: usize,
@@ -149,17 +46,15 @@ unsafe impl Send for Screech {}
 
 /// Error type for failure to execute [`Screech::sample`]
 #[derive(Debug, PartialEq)]
-pub enum Error {
+pub enum ScreechError {
     /// Dependency graph contains a cyclic dependency.
     ///
     /// for example, track A -> track B -> track A
     CyclicDependencies,
-    /// A monitor has been set using [`Screech::add_monitor`]
-    /// which is missing from the sources list
-    MissingMonitor,
-    /// A source has a dependency in its [`crate::traits::Source::get_sources`]
-    /// which is missing from the sources list
-    MissingDependency,
+    /// Output buffer is missing but assigned to an input
+    MissingOutput,
+    /// no Input found for mains set with [`Screech::create_main_out`]
+    MissingInput,
 }
 
 impl Screech {
@@ -191,10 +86,12 @@ impl Screech {
         self.sorted_cache = None;
     }
 
+    /// create new unique identifier
     pub fn create_source_id(&mut self) -> usize {
         self.tracker.create_source_id()
     }
 
+    /// create new main output based on `&'static str` identifier
     pub fn create_main_out(&mut self, signal_id: &'static str) {
         let out = SignalId::new(self.id, signal_id);
         self.tracker.init_output(&out);
@@ -202,6 +99,7 @@ impl Screech {
         self.outs.push(out);
     }
 
+    /// return output [`Signal`] based on `&'static str` identifier
     pub fn get_main_out(&self, signal_id: &'static str) -> Option<&Signal> {
         self.outs
             .iter()
@@ -209,30 +107,35 @@ impl Screech {
             .and_then(|out| self.tracker.get_output(&out))
     }
 
+    /// create and initialize a new input
     pub fn init_input(&mut self, source_id: &usize, signal_id: &'static str) -> Input {
         let input = Input::new(*source_id, signal_id);
         self.tracker.init_input(&input);
         input
     }
 
+    /// create and initialize a new output
     pub fn init_output(&mut self, source_id: &usize, signal_id: &'static str) -> Output {
         let output = Output::new(*source_id, signal_id);
         self.tracker.init_output(&output);
         output
     }
 
+    /// connect an [`Output`] to an [`Input`]
     pub fn connect_signal(&mut self, output: &Output, input: &Input) {
         self.tracker.connect_signal(output, input);
     }
 
+    /// connect an [`Output`] to a main output buffer
     pub fn connect_signal_to_main_out(&mut self, output: &Output, signal_id: &'static str) {
         if let Some(input) = self.outs.iter().find(|s| s.get_signal_id() == signal_id) {
             self.tracker.connect_signal(output, input);
         }
     }
 
-    /// Sample multiple sources based on their dependencies into a single output vec
-    pub fn sample(&mut self, unmapped_sources: &mut [&mut dyn Source]) -> Result<(), Error> {
+    /// Sample multiple sources based on their dependencies into [`Signal`]s stored in a
+    /// [`traits::Tracker`]
+    pub fn sample(&mut self, unmapped_sources: &mut [&mut dyn Source]) -> Result<(), ScreechError> {
         if let None = self.sorted_cache {
             let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
@@ -243,7 +146,7 @@ impl Screech {
             }
 
             let sorted = topological_sort(graph).map_err(|e| match e {
-                GraphError::NoDirectedAcyclicGraph => Error::CyclicDependencies,
+                GraphError::NoDirectedAcyclicGraph => ScreechError::CyclicDependencies,
             })?;
 
             self.sorted_cache = Some(sorted);
@@ -262,7 +165,11 @@ impl Screech {
 
         for i in 0..*self.tracker.get_buffer_size() {
             for out in &self.outs {
-                let inputs = self.tracker.get_input(&out).unwrap().clone();
+                let inputs = self
+                    .tracker
+                    .get_input(&out)
+                    .ok_or(ScreechError::MissingInput)?
+                    .clone();
                 let mut point = 0.0;
 
                 for input in inputs {
@@ -271,7 +178,10 @@ impl Screech {
                     }
                 }
 
-                let output_signal = self.tracker.get_mut_output(&out).unwrap();
+                let output_signal = self
+                    .tracker
+                    .get_mut_output(&out)
+                    .ok_or(ScreechError::MissingOutput)?;
                 output_signal.samples[i] = point;
             }
         }

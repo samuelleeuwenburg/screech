@@ -6,7 +6,7 @@ use core::cmp;
 /// Struct containing audio samples
 #[derive(Clone)]
 pub struct Signal {
-    /// sample buffer
+    /// buffer containing samples
     pub samples: Vec<f32>,
 }
 

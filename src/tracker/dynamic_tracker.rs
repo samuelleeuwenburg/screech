@@ -8,16 +8,13 @@ use rustc_hash::FxHashMap;
 /// and to keep track of signals belonging to a certain id
 ///
 /// ```
-/// use screech::traits::Source;
+/// use screech::traits::Tracker;
 /// use screech::DynamicTracker;
-/// // use screech::basic::{Track, Oscillator};
 ///
 /// let mut tracker = DynamicTracker::new(128);
-/// // let osc = Oscillator::new(&mut tracker);
-/// // let track = Track::new(&mut tracker);
 ///
 /// // the resulting id is irrelevant as long as it is unique
-/// // assert_eq!(osc.get_source_id() != track.get_source_id(), true);
+/// assert_eq!(tracker.create_source_id() != tracker.create_source_id(), true);
 /// ```
 pub struct DynamicTracker {
     id_position: usize,
