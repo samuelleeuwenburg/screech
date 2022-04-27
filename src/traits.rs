@@ -61,7 +61,7 @@ use alloc::vec::Vec;
 ///     }
 /// }
 /// ```
-pub trait Source {
+pub trait Source: Send {
     /// function that gets called by [`crate::Screech`] during sampling.
     ///
     /// use the reference to the tracker to update relevant [`Signal`]s

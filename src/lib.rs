@@ -111,6 +111,7 @@ impl Screech {
     pub fn init_input(&mut self, source_id: &usize, signal_id: &'static str) -> Input {
         let input = Input::new(*source_id, signal_id);
         self.tracker.init_input(&input);
+        self.invalidate_cache();
         input
     }
 
@@ -118,18 +119,21 @@ impl Screech {
     pub fn init_output(&mut self, source_id: &usize, signal_id: &'static str) -> Output {
         let output = Output::new(*source_id, signal_id);
         self.tracker.init_output(&output);
+        self.invalidate_cache();
         output
     }
 
     /// connect an [`Output`] to an [`Input`]
     pub fn connect_signal(&mut self, output: &Output, input: &Input) {
         self.tracker.connect_signal(output, input);
+        self.invalidate_cache();
     }
 
     /// connect an [`Output`] to a main output buffer
     pub fn connect_signal_to_main_out(&mut self, output: &Output, signal_id: &'static str) {
         if let Some(input) = self.outs.iter().find(|s| s.get_signal_id() == signal_id) {
             self.tracker.connect_signal(output, input);
+            self.invalidate_cache();
         }
     }
 
@@ -152,7 +156,7 @@ impl Screech {
             self.sorted_cache = Some(sorted);
         }
 
-        let sorted = &self.sorted_cache.as_ref().unwrap().clone();
+        let sorted = &self.sorted_cache.as_ref().unwrap();
         let sample_rate = self.sample_rate;
 
         for key in sorted.iter() {
@@ -163,26 +167,30 @@ impl Screech {
             }
         }
 
-        for i in 0..*self.tracker.get_buffer_size() {
-            for out in &self.outs {
-                let inputs = self
-                    .tracker
-                    .get_input(&out)
-                    .ok_or(ScreechError::MissingInput)?
-                    .clone();
-                let mut point = 0.0;
+        for out in &self.outs {
+            let length = *self.tracker.get_buffer_size();
+            let mut samples = vec![0.0; length];
 
-                for input in inputs {
-                    if let Some(input) = self.tracker.get_output(&input) {
-                        point += input.samples[i];
+            let inputs = self
+                .tracker
+                .get_input(&out)
+                .ok_or(ScreechError::MissingInput)?;
+
+            for input in inputs {
+                if let Some(input) = self.tracker.get_output(&input) {
+                    for i in 0..length {
+                        samples[i] += input.samples[i];
                     }
                 }
+            }
 
-                let output_signal = self
-                    .tracker
-                    .get_mut_output(&out)
-                    .ok_or(ScreechError::MissingOutput)?;
-                output_signal.samples[i] = point;
+            let output_signal = self
+                .tracker
+                .get_mut_output(&out)
+                .ok_or(ScreechError::MissingOutput)?;
+
+            for i in 0..length {
+                output_signal.samples[i] = samples[i];
             }
         }
 
