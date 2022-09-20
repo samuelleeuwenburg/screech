@@ -108,6 +108,7 @@ fn main() -> Result<(), ScreechError> {
     ];
 
     screech.sample(&mut sources)?;
+
     assert_eq!(
         screech.get_main_out("mono_out").unwrap().samples,
         [1.0, 1.0, 1.0, 1.0]

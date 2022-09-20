@@ -1,4 +1,4 @@
-use crate::{Input, Output, Signal};
+use crate::{Input, Message, Output, Signal};
 use alloc::vec::Vec;
 
 /// To implement [`Source`] means something can be a source of sound/voltage,
@@ -61,11 +61,11 @@ use alloc::vec::Vec;
 ///     }
 /// }
 /// ```
-pub trait Source: Send {
+pub trait Source<MessageData = ()>: Send {
     /// function that gets called by [`crate::Screech`] during sampling.
     ///
     /// use the reference to the tracker to update relevant [`Signal`]s
-    fn sample(&mut self, tracker: &mut dyn Tracker, sample_rate: usize);
+    fn sample(&mut self, tracker: &mut dyn Tracker<MessageData>, sample_rate: usize);
 
     /// get reference to the id for the source,
     /// this is used to uniquely identify this source when sampling [`Signal`]s
@@ -73,8 +73,9 @@ pub trait Source: Send {
 }
 
 /// Tracker trait to keep track of buffers and connections between [`Output`]s and [`Input`]s
-/// for implementations see [`crate::BasicTracker`] or [`crate::DynamicTracker`]
-pub trait Tracker {
+///
+/// for implementation examples see [`crate::BasicTracker`] or [`crate::DynamicTracker`]
+pub trait Tracker<MessageData = ()> {
     /// return the buffer size
     fn get_buffer_size(&self) -> &usize;
 
@@ -103,13 +104,22 @@ pub trait Tracker {
     fn init_input(&mut self, input: &Input);
 
     /// return a reference to a list of outputs for a given input
-    fn get_input(&self, e: &Input) -> Option<&Vec<Output>>;
+    fn get_input(&self, e: &Input) -> Option<&[Output]>;
 
     /// connect an [`Output`] to an [`Input`]
     fn connect_signal(&mut self, output: &Output, input: &Input);
 
     /// clear [`Output`] connection from an [`Input`]
     fn clear_connection(&mut self, output: &Output, input: &Input);
+
+    /// send message to source id
+    fn send_message(&mut self, id: &usize, message: Message<MessageData>);
+
+    /// get all messages for given source id
+    fn get_messages(&self, id: &usize) -> Option<&[Message<MessageData>]>;
+
+    /// clear all messages for all sources
+    fn clear_messages(&mut self);
 }
 
 /// Trait to implement conversion from a slice of sized types to a generic

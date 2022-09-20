@@ -1,5 +1,5 @@
 use crate::traits::Tracker;
-use crate::{Input, Output, Signal};
+use crate::{Input, Message, Output, Signal};
 use alloc::vec;
 use alloc::vec::Vec;
 use rustc_hash::FxHashMap;
@@ -17,14 +17,15 @@ use rustc_hash::FxHashMap;
 /// // the resulting id is irrelevant as long as it is unique
 /// assert_eq!(tracker.create_source_id() != tracker.create_source_id(), true);
 /// ```
-pub struct BasicTracker<const SOURCES_SIZE: usize> {
+pub struct BasicTracker<const SOURCES_SIZE: usize, T = ()> {
     id_position: usize,
     buffer_size: usize,
     inputs: [FxHashMap<&'static str, Vec<Output>>; SOURCES_SIZE],
     signals: [FxHashMap<&'static str, Signal>; SOURCES_SIZE],
+    messages: FxHashMap<usize, Vec<Message<T>>>,
 }
 
-impl<const SOURCES_SIZE: usize> BasicTracker<SOURCES_SIZE> {
+impl<const SOURCES_SIZE: usize, T> BasicTracker<SOURCES_SIZE, T> {
     /// create a new tracker
     pub fn new(buffer_size: usize) -> Self {
         BasicTracker {
@@ -32,11 +33,12 @@ impl<const SOURCES_SIZE: usize> BasicTracker<SOURCES_SIZE> {
             id_position: 0,
             inputs: [(); SOURCES_SIZE].map(|_| FxHashMap::default()),
             signals: [(); SOURCES_SIZE].map(|_| FxHashMap::default()),
+            messages: FxHashMap::default(),
         }
     }
 }
 
-impl<const SOURCES_SIZE: usize> Tracker for BasicTracker<SOURCES_SIZE> {
+impl<const SOURCES_SIZE: usize, T> Tracker<T> for BasicTracker<SOURCES_SIZE, T> {
     fn get_buffer_size(&self) -> &usize {
         &self.buffer_size
     }
@@ -80,8 +82,10 @@ impl<const SOURCES_SIZE: usize> Tracker for BasicTracker<SOURCES_SIZE> {
         self.inputs[*s.get_source_id()].insert(s.get_signal_id(), vec![]);
     }
 
-    fn get_input(&self, s: &Input) -> Option<&Vec<Output>> {
-        self.inputs[*s.get_source_id()].get(s.get_signal_id())
+    fn get_input(&self, s: &Input) -> Option<&[Output]> {
+        self.inputs[*s.get_source_id()]
+            .get(s.get_signal_id())
+            .map(|v| v.as_slice())
     }
 
     fn resize_buffers(&mut self, buffer_size: usize) {
@@ -103,5 +107,19 @@ impl<const SOURCES_SIZE: usize> Tracker for BasicTracker<SOURCES_SIZE> {
         if let Some(input) = self.inputs[*input.get_source_id()].get_mut(input.get_signal_id()) {
             input.retain(|o| o != output);
         }
+    }
+
+    fn send_message(&mut self, id: &usize, message: Message<T>) {
+        if let Some(messages) = self.messages.get_mut(id) {
+            messages.push(message);
+        }
+    }
+
+    fn get_messages(&self, id: &usize) -> Option<&[Message<T>]> {
+        self.messages.get(id).map(|v| v.as_slice())
+    }
+
+    fn clear_messages(&mut self) {
+        self.messages.clear();
     }
 }

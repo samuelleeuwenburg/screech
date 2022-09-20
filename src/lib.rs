@@ -1,6 +1,4 @@
 //! A collection of helpers for handling audio data in real time
-//!
-//! **NOTE! this library is unfinished, incomplete and most likely contains bugs!**
 
 #![no_std]
 #![warn(missing_docs)]
@@ -8,6 +6,7 @@
 extern crate alloc;
 
 mod graph;
+mod message;
 mod signal;
 mod signal_id;
 mod tracker;
@@ -21,28 +20,29 @@ pub type Input = signal_id::SignalId;
 /// Identifier used for keeping track of signals
 pub type Output = signal_id::SignalId;
 
+pub use message::Message;
 pub use signal::Signal;
 pub use tracker::{BasicTracker, DynamicTracker};
 
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
-use graph::{topological_sort, Error as GraphError};
+use graph::topological_sort;
 use rustc_hash::FxHashMap;
 use signal_id::SignalId;
 use traits::{Source, Tracker};
 
 /// Main helper struct to render and manage relations between [`crate::traits::Source`] types.
-pub struct Screech {
+pub struct Screech<MessageData = ()> {
     /// sample rate field used for sampling
     pub sample_rate: usize,
     outs: Vec<SignalId>,
     id: usize,
     sorted_cache: Option<Vec<usize>>,
-    tracker: Box<dyn Tracker>,
+    tracker: Box<dyn Tracker<MessageData>>,
 }
 
-unsafe impl Send for Screech {}
+unsafe impl<T> Send for Screech<T> {}
 
 /// Error type for failure to execute [`Screech::sample`]
 #[derive(Debug, PartialEq)]
@@ -57,7 +57,7 @@ pub enum ScreechError {
     MissingInput,
 }
 
-impl Screech {
+impl<MessageData: 'static> Screech<MessageData> {
     /// Create new Screech instance with a default tracker
     pub fn new(buffer_size: usize, sample_rate: usize) -> Self {
         Self::with_tracker(Box::new(DynamicTracker::new(buffer_size)), sample_rate)
@@ -71,7 +71,7 @@ impl Screech {
     /// let tracker = BasicTracker::<256>::new(8);
     /// let screech = Screech::with_tracker(Box::new(tracker), 48_000);
     /// ```
-    pub fn with_tracker(mut tracker: Box<dyn Tracker>, sample_rate: usize) -> Self {
+    pub fn with_tracker(mut tracker: Box<dyn Tracker<MessageData>>, sample_rate: usize) -> Self {
         Screech {
             id: tracker.create_source_id(),
             outs: vec![],
@@ -139,34 +139,38 @@ impl Screech {
 
     /// Sample multiple sources based on their dependencies into [`Signal`]s stored in a
     /// [`traits::Tracker`]
-    pub fn sample(&mut self, unmapped_sources: &mut [&mut dyn Source]) -> Result<(), ScreechError> {
+    pub fn sample(
+        &mut self,
+        unmapped_sources: &mut [&mut dyn Source<MessageData>],
+    ) -> Result<(), ScreechError> {
+        // update dependency graph if needed
         if let None = self.sorted_cache {
             let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
-            for source in unmapped_sources.into_iter() {
+            for source in unmapped_sources.iter() {
                 let id = source.get_source_id();
                 let sources = self.tracker.get_sources(id);
                 graph.insert(*id, sources);
             }
 
-            let sorted = topological_sort(graph).map_err(|e| match e {
-                GraphError::NoDirectedAcyclicGraph => ScreechError::CyclicDependencies,
-            })?;
-
+            let sorted = topological_sort(graph);
             self.sorted_cache = Some(sorted);
         }
 
-        let sorted = &self.sorted_cache.as_ref().unwrap();
         let sample_rate = self.sample_rate;
 
-        for key in sorted.iter() {
-            for source in unmapped_sources.iter_mut() {
+        for source in unmapped_sources.iter_mut() {
+            for key in self.sorted_cache.as_ref().unwrap().iter() {
                 if key == source.get_source_id() {
                     source.sample(self.tracker.as_mut(), sample_rate);
                 }
             }
         }
 
+        // clear message queue
+        self.tracker.clear_messages();
+
+        // generate output
         for out in &self.outs {
             let length = *self.tracker.get_buffer_size();
             let mut samples = vec![0.0; length];

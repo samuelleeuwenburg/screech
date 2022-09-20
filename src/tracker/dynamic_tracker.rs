@@ -1,5 +1,5 @@
 use crate::traits::Tracker;
-use crate::{Input, Output, Signal};
+use crate::{Input, Message, Output, Signal};
 use alloc::vec;
 use alloc::vec::Vec;
 use rustc_hash::FxHashMap;
@@ -11,19 +11,20 @@ use rustc_hash::FxHashMap;
 /// use screech::traits::Tracker;
 /// use screech::DynamicTracker;
 ///
-/// let mut tracker = DynamicTracker::new(128);
+/// let mut tracker = DynamicTracker::<()>::new(128);
 ///
 /// // the resulting id is irrelevant as long as it is unique
 /// assert_eq!(tracker.create_source_id() != tracker.create_source_id(), true);
 /// ```
-pub struct DynamicTracker {
+pub struct DynamicTracker<T = ()> {
     id_position: usize,
     buffer_size: usize,
     inputs: FxHashMap<usize, FxHashMap<&'static str, Vec<Output>>>,
     signals: FxHashMap<usize, FxHashMap<&'static str, Signal>>,
+    messages: FxHashMap<usize, Vec<Message<T>>>,
 }
 
-impl DynamicTracker {
+impl<T> DynamicTracker<T> {
     /// create a new tracker
     pub fn new(buffer_size: usize) -> Self {
         DynamicTracker {
@@ -31,11 +32,12 @@ impl DynamicTracker {
             buffer_size,
             inputs: FxHashMap::default(),
             signals: FxHashMap::default(),
+            messages: FxHashMap::default(),
         }
     }
 }
 
-impl Tracker for DynamicTracker {
+impl<T> Tracker<T> for DynamicTracker<T> {
     fn get_buffer_size(&self) -> &usize {
         &self.buffer_size
     }
@@ -98,10 +100,11 @@ impl Tracker for DynamicTracker {
         input.insert(s.get_signal_id(), vec![]);
     }
 
-    fn get_input(&self, s: &Input) -> Option<&Vec<Output>> {
+    fn get_input(&self, s: &Input) -> Option<&[Output]> {
         self.inputs
             .get(s.get_source_id())
             .and_then(|signals| signals.get(s.get_signal_id()))
+            .map(|v| v.as_slice())
     }
 
     fn resize_buffers(&mut self, buffer_size: usize) {
@@ -132,5 +135,19 @@ impl Tracker for DynamicTracker {
         {
             input.retain(|o| o != output);
         }
+    }
+
+    fn send_message(&mut self, id: &usize, message: Message<T>) {
+        if let Some(messages) = self.messages.get_mut(id) {
+            messages.push(message);
+        }
+    }
+
+    fn get_messages(&self, id: &usize) -> Option<&[Message<T>]> {
+        self.messages.get(id).map(|v| v.as_slice())
+    }
+
+    fn clear_messages(&mut self) {
+        self.messages.clear();
     }
 }
