@@ -145,6 +145,7 @@ impl<MessageData: 'static> Screech<MessageData> {
     ) -> Result<(), ScreechError> {
         // update dependency graph if needed
         if let None = self.sorted_cache {
+            // @TODO: move this allocation outside of the `sample()` method
             let mut graph = FxHashMap::<usize, Vec<usize>>::default();
 
             for source in unmapped_sources.iter() {
@@ -196,6 +197,8 @@ impl<MessageData: 'static> Screech<MessageData> {
             for i in 0..length {
                 output_signal.samples[i] = samples[i];
             }
+
+            // samples.clear();
         }
 
         Ok(())
