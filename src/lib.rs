@@ -129,10 +129,24 @@ impl<MessageData: 'static> Screech<MessageData> {
         self.invalidate_cache();
     }
 
+    /// disconnect an [`Output`] to an [`Input`]
+    pub fn disconnect_signal(&mut self, output: &Output, input: &Input) {
+        self.tracker.clear_connection(output, input);
+        self.invalidate_cache();
+    }
+
     /// connect an [`Output`] to a main output buffer
     pub fn connect_signal_to_main_out(&mut self, output: &Output, signal_id: &'static str) {
         if let Some(input) = self.outs.iter().find(|s| s.get_signal_id() == signal_id) {
             self.tracker.connect_signal(output, input);
+            self.invalidate_cache();
+        }
+    }
+
+    /// disconnect an [`Output`] from a main output buffer
+    pub fn disconnect_signal_from_main_out(&mut self, output: &Output, signal_id: &'static str) {
+        if let Some(input) = self.outs.iter().find(|s| s.get_signal_id() == signal_id) {
+            self.tracker.clear_connection(output, input);
             self.invalidate_cache();
         }
     }
