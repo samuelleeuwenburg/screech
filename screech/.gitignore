@@ -1,0 +1,5 @@
+/target
+/examples/*.wav
+/examples/peaks
+Cargo.lock
+.swp
