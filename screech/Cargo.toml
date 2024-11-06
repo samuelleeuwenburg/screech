@@ -10,11 +10,12 @@ license = "Apache-2.0"
 keywords = ["audio", "no_std"]
 
 [dependencies]
-libm = "0.2.1"
-rustc-hash = "1.1.0"
+screech-macro = {version = "0.1", path = "../screech-macro"}
 
-[[example]]
-name = "oscillator"
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+wavv = "0.2"
 
-[[example]]
-name = "routing"
+[[bench]]
+name = "screech_vs_direct"
+harness = false
