@@ -1,38 +1,42 @@
-use crate::module::Module;
-use crate::patchbay::{PatchError, PatchPoint, PatchPointOutput, Patchbay};
+use crate::{Module, PatchPoint, Patchbay, Signal};
 
-const INPUTS: usize = 128;
+const INPUTS: usize = 16;
 
+/// 16 channel summing mixer
 pub struct Mix {
     output: PatchPoint,
-    inputs: [Option<PatchPointOutput>; INPUTS],
+    inputs: [Signal; INPUTS],
 }
 
 impl Mix {
     pub fn new(output: PatchPoint) -> Self {
         Mix {
             output,
-            inputs: [None; INPUTS],
+            inputs: [Signal::None; INPUTS],
         }
     }
 
-    pub fn add_input(&mut self, input: PatchPointOutput, index: usize) {
-        self.inputs[index] = Some(input);
+    pub fn output(&self) -> Signal {
+        self.output.signal()
+    }
+
+    pub fn add_input(&mut self, input: Signal, index: usize) {
+        self.inputs[index] = input;
     }
 }
 
 impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Mix {
-    fn process<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) -> Result<(), PatchError> {
+    fn is_ready<const P: usize>(&self, patchbay: &Patchbay<P>) -> bool {
+        self.inputs.iter().all(|p| patchbay.check(*p))
+    }
+
+    fn process<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
         let mut sum = 0.0;
 
         for input in self.inputs {
-            if let Some(i) = input {
-                sum += patchbay.get_sample(i)?;
-            }
+            sum += patchbay.get(input);
         }
 
-        patchbay.set_sample(&mut self.output, sum);
-
-        Ok(())
+        patchbay.set(&mut self.output, sum);
     }
 }

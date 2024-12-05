@@ -1,13 +1,73 @@
-use crate::sample::Sample;
+use crate::Signal;
 
-#[derive(Debug, PartialEq)]
-pub enum PatchError {
-    MissingSample,
+/// Virtual patchbay holding sample values.
+///
+/// ```
+/// use screech::Patchbay;
+///
+/// let mut patchbay: Patchbay<128> = Patchbay::new();
+///
+/// let mut point = patchbay.point().unwrap();
+/// assert_eq!(patchbay.get(point.signal()), 0.0);
+///
+/// patchbay.set(&mut point, 1.0);
+/// assert_eq!(patchbay.get(point.signal()), 1.0);
+/// ```
+#[derive(Debug)]
+pub struct Patchbay<const PATCHPOINTS: usize> {
+    buffer: [f32; PATCHPOINTS],
+    marks: [bool; PATCHPOINTS],
 }
 
-#[derive(Copy, Clone)]
-pub struct PatchPointOutput {
-    id: usize,
+impl<const PATCHPOINTS: usize> Patchbay<PATCHPOINTS> {
+    pub fn new() -> Self {
+        Patchbay {
+            buffer: [0.0; PATCHPOINTS],
+            marks: [false; PATCHPOINTS],
+        }
+    }
+
+    /// Get a free [`PatchPoint`], returns `None` if all available points are taken.
+    pub fn point(&mut self) -> Option<PatchPoint> {
+        for i in 0..PATCHPOINTS {
+            if !self.marks[i] {
+                self.marks[i] = true;
+                return Some(PatchPoint::new(i));
+            }
+        }
+
+        None
+    }
+
+    /// Get the sample value of a signal.
+    pub fn get(&self, signal: Signal) -> f32 {
+        match signal {
+            Signal::PatchPoint(id) => self.buffer[id],
+            Signal::Fixed(s) => s,
+            Signal::None => 0.0,
+        }
+    }
+
+    /// Set the sample value of a patchpoint using the exclusive ownership.
+    pub fn set(&mut self, point: &mut PatchPoint, sample: f32) {
+        self.buffer[point.id] = sample;
+        self.marks[point.id] = true;
+    }
+
+    /// Check if a patchpoint sample value is up to date.
+    pub fn check(&self, signal: Signal) -> bool {
+        match signal {
+            Signal::PatchPoint(id) => self.marks[id],
+            Signal::Fixed(_) => true,
+            Signal::None => true,
+        }
+    }
+
+    pub fn clear_marks(&mut self) {
+        for m in self.marks.iter_mut() {
+            *m = false;
+        }
+    }
 }
 
 pub struct PatchPoint {
@@ -15,60 +75,11 @@ pub struct PatchPoint {
 }
 
 impl PatchPoint {
-    pub fn new(id: usize) -> Self {
+    pub(crate) fn new(id: usize) -> Self {
         PatchPoint { id }
     }
 
-    pub fn output(&self) -> PatchPointOutput {
-        PatchPointOutput { id: self.id }
-    }
-}
-
-pub struct Patchbay<const POINTS: usize> {
-    pub buffer: [Sample; POINTS],
-    marks: [bool; POINTS],
-    index: usize,
-}
-
-impl<const POINTS: usize> Patchbay<POINTS> {
-    pub fn new() -> Self {
-        Patchbay {
-            buffer: [0.0; POINTS],
-            marks: [false; POINTS],
-            index: 0,
-        }
-    }
-
-    // @TODO: rename to `get_patch_point`?
-    pub fn get_point(&mut self) -> PatchPoint {
-        let input = PatchPoint::new(self.index);
-        self.index += 1;
-
-        input
-    }
-
-    pub fn get_sample(&self, point: PatchPointOutput) -> Result<Sample, PatchError> {
-        if self.marks[point.id] {
-            Ok(self.buffer[point.id])
-        } else {
-            Err(PatchError::MissingSample)
-        }
-    }
-
-    pub fn set_sample(&mut self, point: &mut PatchPoint, sample: Sample) {
-        self.buffer[point.id] = sample;
-        self.marks[point.id] = true;
-    }
-
-    pub fn set_marks(&mut self) {
-        for m in self.marks.iter_mut() {
-            *m = false;
-        }
-    }
-
-    pub fn clear_marks(&mut self) {
-        for m in self.marks.iter_mut() {
-            *m = true;
-        }
+    pub fn signal(&self) -> Signal {
+        Signal::PatchPoint(self.id)
     }
 }

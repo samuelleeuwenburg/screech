@@ -1,5 +1,10 @@
-use crate::module::Module;
-use crate::patchbay::Patchbay;
+use crate::{Module, Patchbay};
+
+#[derive(PartialEq)]
+enum Mode {
+    A,
+    B,
+}
 
 /// Processor for [Module]s.
 ///
@@ -8,142 +13,154 @@ use crate::patchbay::Patchbay;
 ///
 /// For circular connections the order is undetermined and the previous sample might be read
 pub struct Processor<const SAMPLE_RATE: usize, const MODULES: usize, M: Module<SAMPLE_RATE>> {
-    modules: [M; MODULES],
-    order: [usize; MODULES],
-    order_set: bool,
+    pub modules: [Option<M>; MODULES],
+    pub module_ids: [Option<usize>; MODULES],
+    pub order_set: bool,
+    mode: Mode,
 }
 
 impl<const SAMPLE_RATE: usize, const MODULES: usize, M: Module<SAMPLE_RATE>>
     Processor<SAMPLE_RATE, MODULES, M>
 {
     /// Instantiates a new processor given a set of modules.
-    ///
-    /// Modules are expected to implement the [`Module`] trait,
-    pub fn new(modules: [M; MODULES]) -> Self {
+    pub fn new(modules: [Option<M>; MODULES]) -> Self {
+        let module_ids = core::array::from_fn(|i| modules[i].as_ref().map(|_| i));
+
         Processor {
             modules,
-            order: [0; MODULES],
+            module_ids,
             order_set: false,
+            mode: Mode::A,
         }
     }
 
-    /// Creates the order in which to run [`Module::process`] on modules based on their [`Patchbay`] connections.
-    ///
-    /// **Note:** to determine the order it executes the process function on the modules which might cause state changes
-    pub fn order_modules<const POINTS: usize>(&mut self, patchbay: &mut Patchbay<POINTS>) {
-        patchbay.set_marks();
-
-        let mut index = 0;
-        let mut processed = [false; MODULES];
-
-        loop {
-            let mut number_of_oks = 0;
-
-            for (i, module) in self.modules.iter_mut().enumerate() {
-                if processed[i] {
-                    continue;
-                }
-
-                match module.process(patchbay) {
-                    Ok(_) => {
-                        // Mark as already processed
-                        processed[i] = true;
-
-                        // Put it in cache processing order
-                        self.order[index] = i;
-                        index += 1;
-
-                        // Tell the loop something has changed, so keep going
-                        number_of_oks += 1;
-                    }
-                    _ => (),
-                }
-            }
-
-            if number_of_oks == 0 {
-                break;
-            }
+    /// Instantiates a new empty processor.
+    pub fn empty() -> Self {
+        Processor {
+            modules: core::array::from_fn(|_| None),
+            module_ids: [None; MODULES],
+            order_set: false,
+            mode: Mode::A,
         }
-
-        // Add unprocessed to the cache order
-        for (i, p) in processed.iter().enumerate() {
-            if !p {
-                self.order[index] = i;
-                index += 1;
-            }
-        }
-
-        self.order_set = true;
-        patchbay.clear_marks();
     }
 
-    /// Callback to process modules, usually called from a loop to process the entire buffer.
+    pub fn mode_a(&mut self) {
+        self.mode = Mode::A;
+    }
+
+    pub fn mode_b(&mut self) {
+        self.mode = Mode::B;
+    }
+
+    /// Take all modules from the processor leaving it empty.
     ///
     /// ```
-    /// use screech::processor::Processor;
-    /// use screech::patchbay::Patchbay;
-    /// use screech::modules::Oscillator;
+    /// use screech::Processor;
+    /// use screech::modules::Dummy;
     ///
-    /// const BUFFER_SIZE: usize = 256;
-    /// const SAMPLE_RATE: usize = 48_000;
+    /// const SAMPLE_RATE: usize = 48000;
+    /// const MODULES: usize = 4;
     ///
-    /// let mut patchbay: Patchbay<8> = Patchbay::new();
-    /// let patchpoint = patchbay.get_point();
-    /// let osc = Oscillator::new(patchpoint, 440.0);
-    /// let mut processor: Processor<SAMPLE_RATE, 1, Oscillator> = Processor::new([osc]);
+    /// let mut processor: Processor<SAMPLE_RATE, MODULES, Dummy> = Processor::new([None, None, None, None]);
     ///
-    /// for _ in 0..BUFFER_SIZE {
-    ///   processor.process_modules(&mut patchbay);
-    /// }
+    /// processor.insert_module(Dummy);
+    /// processor.insert_module(Dummy);
+    ///
+    /// assert_eq!(processor.take_modules(), [Some(Dummy), Some(Dummy), None, None]);
+    /// assert_eq!(processor.take_modules(), [None, None, None, None]);
     /// ```
-    ///
-    /// Internally calls `order_modules` if no order has been determined yet,
-    /// to avoid the initial performance hit you can call `order_modules` manually.
-    pub fn process_modules<const POINTS: usize>(&mut self, patchbay: &mut Patchbay<POINTS>) {
-        if !self.order_set {
-            self.order_modules(patchbay);
+    pub fn take_modules(&mut self) -> [Option<M>; MODULES] {
+        let mut modules = core::array::from_fn(|_| None);
+
+        for i in 0..MODULES {
+            modules[i] = self.modules[i].take();
         }
 
-        for &index in self.order.iter() {
-            let _ = self.modules[index].process(patchbay);
-        }
+        self.module_ids = [None; MODULES];
+
+        modules
     }
 
     /// Get a reference to a module at a given index.
     ///
     /// ```
-    /// use screech::processor::Processor;
-    /// use screech::patchbay::Patchbay;
+    /// use screech::{Patchbay, Processor};
     /// use screech::modules::Dummy;
     ///
-    /// let mut processor: Processor<48_000, 256, Dummy> = Processor::new([Dummy; 256]);
-    /// assert!(processor.get_module(128) == &Dummy);
+    /// let mut processor: Processor<48_000, 256, Dummy> = Processor::new([Some(Dummy); 256]);
+    /// assert!(processor.get_module(128) == Some(&Dummy));
     /// ```
-    pub fn get_module(&self, index: usize) -> &M {
-        &self.modules[index]
+    pub fn get_module(&self, index: usize) -> Option<&M> {
+        self.module_ids[index].and_then(|i| self.modules[i].as_ref())
     }
 
     /// Get a mutable reference to a module at a given index.
     ///
     /// ```
-    /// use screech::processor::Processor;
-    /// use screech::patchbay::Patchbay;
+    /// use screech::{Patchbay, Processor};
     /// use screech::modules::Dummy;
     ///
-    /// let mut processor: Processor<48_000, 256, Dummy> = Processor::new([Dummy; 256]);
-    /// assert!(processor.get_module_mut(64) == &mut Dummy);
+    /// let mut processor: Processor<48_000, 256, Dummy> = Processor::new([Some(Dummy); 256]);
+    /// assert!(processor.get_module_mut(64) == Some(&mut Dummy));
     /// ```
-    pub fn get_module_mut(&mut self, index: usize) -> &mut M {
-        &mut self.modules[index]
+    pub fn get_module_mut(&mut self, index: usize) -> Option<&mut M> {
+        self.module_ids[index].and_then(move |i| self.modules[i].as_mut())
+    }
+
+    /// Insert a module
+    ///
+    /// ```
+    /// use screech::{Module, Patchbay, Processor};
+    /// use screech::modules::Oscillator;
+    /// use screech_macro::modularize;
+    ///
+    /// const SAMPLE_RATE: usize = 48_000;
+    /// const MODULES: usize = 256;
+    /// const PATCHES: usize = 256;
+    ///
+    /// const EMPTY: Option<Oscillator> = None;
+    /// let mut patchbay: Patchbay<PATCHES> = Patchbay::new();
+    /// let mut processor: Processor<SAMPLE_RATE, MODULES, Oscillator> = Processor::new([EMPTY; MODULES]);
+    /// let mut osc = Oscillator::new(patchbay.point().unwrap());
+    ///
+    /// osc.set_frequency(440.0);
+    ///
+    /// let id = processor.insert_module(osc).unwrap();
+    ///
+    /// match processor.get_module(id) {
+    ///     Some(o) => assert_eq!(o.get_frequency(), 440.0),
+    ///     _ => panic!("expected `Oscillator` module type"),
+    /// }
+    /// ```
+    pub fn insert_module(&mut self, module: M) -> Option<usize> {
+        // @TODO: convert to Result type?
+        for i in 0..MODULES {
+            if self.module_ids[i].is_none() {
+                for m in 0..MODULES {
+                    if self.modules[m].is_none() {
+                        self.modules[m] = Some(module);
+                        self.module_ids[i] = Some(m);
+
+                        // Bust the cache
+                        self.order_set = false;
+
+                        return Some(i);
+                    }
+                }
+
+                // Mismatch between available `modules` and `module_ids`
+                return None;
+            }
+        }
+
+        None
     }
 
     /// Replace a module at a given index.
     ///
     /// ```
-    /// use screech::processor::Processor;
-    /// use screech::patchbay::{Patchbay, PatchError};
-    /// use screech::modules::{Dummy, Oscillator};
-    /// use screech::module::Module;
+    /// use screech::{Module, Patchbay, Processor};
+    /// use screech::modules::{Vca, Oscillator};
     /// use screech_macro::modularize;
     ///
     /// const SAMPLE_RATE: usize = 48_000;
@@ -152,27 +169,148 @@ impl<const SAMPLE_RATE: usize, const MODULES: usize, M: Module<SAMPLE_RATE>>
     ///
     /// #[modularize]
     /// enum Modules {
-    ///    Dummy(Dummy),
     ///    Oscillator(Oscillator),
+    ///    Vca(Vca),
     /// }
     ///
-    /// const EMPTY_MODULE: Modules = Modules::Dummy(Dummy);
+    /// const EMPTY: Option<Modules> = None;
     ///
     /// let mut patchbay: Patchbay<PATCHES> = Patchbay::new();
-    /// let mut processor: Processor<SAMPLE_RATE, MODULES, Modules> = Processor::new([EMPTY_MODULE; MODULES]);
-    /// let osc = Oscillator::new(patchbay.get_point(), 440.0);
+    /// let mut processor: Processor<SAMPLE_RATE, MODULES, Modules> = Processor::new([EMPTY; MODULES]);
+    /// let mut osc = Oscillator::new(patchbay.point().unwrap());
+    ///
+    /// osc.set_frequency(440.0);
     ///
     /// processor.replace_module(Modules::Oscillator(osc), 192);
     ///
     /// match processor.get_module(192) {
-    ///     Modules::Oscillator(o) => assert_eq!(o.frequency, 440.0),
+    ///     Some(Modules::Oscillator(o)) => assert_eq!(o.get_frequency(), 440.0),
     ///     _ => panic!("expected `Oscillator` module type"),
     /// }
     /// ```
     pub fn replace_module(&mut self, module: M, index: usize) {
-        self.modules[index] = module;
-
         // Bust the cache
+        self.order_set = false;
+
+        match self.module_ids[index] {
+            Some(i) => self.modules[i] = Some(module),
+            None => {
+                for i in 0..MODULES {
+                    if self.modules[i].is_none() {
+                        self.modules[i] = Some(module);
+                        self.module_ids[index] = Some(i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    /// Callback to process modules, usually called from a loop to process the entire buffer.
+    ///
+    /// ```
+    /// use screech::{Patchbay, Processor};
+    /// use screech::modules::Oscillator;
+    ///
+    /// const BUFFER_SIZE: usize = 256;
+    /// const SAMPLE_RATE: usize = 48_000;
+    ///
+    /// let mut patchbay: Patchbay<8> = Patchbay::new();
+    /// let osc = Oscillator::new(patchbay.point().unwrap());
+    /// let mut processor: Processor<SAMPLE_RATE, 1, Oscillator> = Processor::new([Some(osc)]);
+    ///
+    /// for _ in 0..BUFFER_SIZE {
+    ///   processor.process_modules(&mut patchbay);
+    /// }
+    /// ```
+    ///
+    /// Internally calls `order_modules` if no order has been determined yet,
+    /// to avoid the initial performance hit you can call `order_modules` manually.
+    pub fn process_modules<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
+        if !self.order_set {
+            self.order_and_process_modules(patchbay);
+        } else {
+            for i in 0..MODULES {
+                match self.modules[i].as_mut() {
+                    Some(m) => m.process(patchbay),
+                    None => break,
+                }
+            }
+        }
+    }
+
+    fn order_and_process_modules<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
+        patchbay.clear_marks();
+
+        let mut new_index = 0;
+        let mut new_order: [Option<usize>; MODULES] = [None; MODULES];
+        let mut processed = [false; MODULES];
+
+        loop {
+            let mut updated_modules = 0;
+
+            for index in 0..MODULES {
+                match (
+                    processed[index],
+                    self.module_ids[index].and_then(|id| self.modules[id].as_mut()),
+                ) {
+                    // If it has not been processed already and contains a module
+                    (false, Some(m)) => {
+                        if m.is_ready(patchbay) {
+                            // Process the module so the outputs are set.
+                            m.process(patchbay);
+                            // Mark as already processed
+                            processed[index] = true;
+                            // Put it in cache processing order
+                            new_order[index] = Some(new_index);
+                            new_index += 1;
+                            // Tell the loop something has changed, so keep going
+                            updated_modules += 1;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            if updated_modules == 0 {
+                break;
+            }
+        }
+
+        // Process and sort the remaining non ready modules
+        for index in 0..MODULES {
+            match (
+                processed[index],
+                self.module_ids[index].and_then(|id| self.modules[id].as_mut()),
+            ) {
+                (false, Some(m)) => {
+                    // Process the module so the outputs are set.
+                    m.process(patchbay);
+                    // Put it in cache processing order
+                    new_order[index] = Some(new_index);
+                    new_index += 1;
+                }
+                _ => (),
+            }
+        }
+
+        let mut modules_cache: [Option<M>; MODULES] = core::array::from_fn(|_| None);
+
+        // Reorder the modules
+        for index in 0..MODULES {
+            if let Some(old_id) = self.module_ids[index] {
+                let new_id = new_order[index].unwrap_or(old_id);
+                modules_cache[new_id] = self.modules[old_id].take();
+                self.module_ids[index] = Some(new_id);
+            }
+        }
+
+        // Swap the modules
+        self.modules = modules_cache;
+
+        self.order_set = true;
+    }
+
+    pub fn clear_cache(&mut self) {
         self.order_set = false;
     }
 }
@@ -180,159 +318,191 @@ impl<const SAMPLE_RATE: usize, const MODULES: usize, M: Module<SAMPLE_RATE>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patchbay::{PatchError, PatchPoint, PatchPointOutput, Patchbay};
-    use crate::sample::Sample;
+    use crate::modules::Dummy;
+    use crate::{PatchPoint, Patchbay, Signal};
     use screech_macro::modularize;
 
     const SAMPLE_RATE: usize = 48_000;
 
-    struct Fixed {
-        value: Sample,
+    struct Constant {
+        value: f32,
         output: PatchPoint,
     }
 
-    impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Fixed {
-        fn process<const POINTS: usize>(
-            &mut self,
-            patchbay: &mut Patchbay<POINTS>,
-        ) -> Result<(), PatchError> {
-            patchbay.set_sample(&mut self.output, self.value);
-            Ok(())
+    impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Constant {
+        fn process<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
+            patchbay.set(&mut self.output, self.value);
         }
     }
 
     struct Divide {
-        value: Sample,
-        input: PatchPointOutput,
+        value: f32,
+        input: Signal,
         output: PatchPoint,
     }
 
     impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Divide {
-        fn process<const POINTS: usize>(
-            &mut self,
-            patchbay: &mut Patchbay<POINTS>,
-        ) -> Result<(), PatchError> {
-            patchbay.set_sample(
-                &mut self.output,
-                patchbay.get_sample(self.input)? / self.value,
-            );
-            Ok(())
+        fn is_ready<const P: usize>(&self, patchbay: &Patchbay<P>) -> bool {
+            patchbay.check(self.input)
+        }
+
+        fn process<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
+            patchbay.set(&mut self.output, patchbay.get(self.input) / self.value);
         }
     }
 
-    struct Mix {
-        inputs: [PatchPointOutput; 2],
+    struct Add {
+        x: Signal,
+        y: Signal,
         output: PatchPoint,
     }
 
-    impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Mix {
-        fn process<const POINTS: usize>(
-            &mut self,
-            patchbay: &mut Patchbay<POINTS>,
-        ) -> Result<(), PatchError> {
-            let mut result = 0.0;
+    impl<const SAMPLE_RATE: usize> Module<SAMPLE_RATE> for Add {
+        fn is_ready<const P: usize>(&self, patchbay: &Patchbay<P>) -> bool {
+            patchbay.check(self.x) && patchbay.check(self.y)
+        }
 
-            for s in self.inputs {
-                result += patchbay.get_sample(s)?;
-            }
-
-            patchbay.set_sample(&mut self.output, result);
-            Ok(())
+        fn process<const P: usize>(&mut self, patchbay: &mut Patchbay<P>) {
+            patchbay.set(
+                &mut self.output,
+                patchbay.get(self.x) + patchbay.get(self.y),
+            );
         }
     }
 
     #[modularize]
     enum Modules {
-        Fixed(Fixed),
+        Constant(Constant),
         Divide(Divide),
-        Mix(Mix),
+        Add(Add),
+    }
+
+    #[test]
+    fn process_should_allow_adding_modules() {
+        let mut processor: Processor<SAMPLE_RATE, 4, Dummy> =
+            Processor::new([None, None, None, None]);
+
+        processor.insert_module(Dummy);
+        processor.insert_module(Dummy);
+
+        assert_eq!(
+            processor.take_modules(),
+            [Some(Dummy), Some(Dummy), None, None]
+        );
+
+        processor.insert_module(Dummy);
+        processor.insert_module(Dummy);
+        processor.insert_module(Dummy);
+
+        assert_eq!(
+            processor.take_modules(),
+            [Some(Dummy), Some(Dummy), Some(Dummy), None]
+        );
+    }
+
+    #[test]
+    fn process_should_allow_replacing_modules() {
+        let mut processor: Processor<SAMPLE_RATE, 4, Dummy> =
+            Processor::new([None, None, None, None]);
+
+        processor.replace_module(Dummy, 2);
+
+        assert_eq!(processor.take_modules(), [Some(Dummy), None, None, None]);
+    }
+
+    #[test]
+    fn process_should_allow_getting_modules() {
+        let mut processor: Processor<SAMPLE_RATE, 4, Dummy> =
+            Processor::new([None, None, None, Some(Dummy)]);
+
+        let id = processor.insert_module(Dummy).unwrap();
+        processor.replace_module(Dummy, 2);
+
+        assert_eq!(processor.get_module(id), Some(&Dummy));
+        assert_eq!(processor.get_module_mut(2), Some(&mut Dummy));
+        assert_eq!(processor.get_module_mut(3), Some(&mut Dummy));
+        assert_eq!(
+            processor.take_modules(),
+            [Some(Dummy), Some(Dummy), None, Some(Dummy)]
+        );
     }
 
     #[test]
     fn process_should_run_process_on_modules() {
-        let mut patchbay: Patchbay<32> = Patchbay::new();
-        let fixed_point = patchbay.get_point();
-        let final_output = fixed_point.output();
-        let mut processor: Processor<SAMPLE_RATE, 1, _> = Processor::new([Modules::Fixed(Fixed {
-            value: 0.8,
-            output: fixed_point,
-        })]);
+        let mut patchbay: Patchbay<1> = Patchbay::new();
+        let output = patchbay.point().unwrap();
+        let signal = output.signal();
+        let mut processor: Processor<SAMPLE_RATE, 1, _> =
+            Processor::new([Some(Modules::Constant(Constant { value: 0.8, output }))]);
 
         processor.process_modules(&mut patchbay);
-        assert_eq!(patchbay.get_sample(final_output), Ok(0.8));
+        assert_eq!(patchbay.get(signal), 0.8);
     }
 
     #[test]
     fn process_should_run_modules_in_the_correct_order() {
         let mut patchbay: Patchbay<32> = Patchbay::new();
-        let divide2_point = patchbay.get_point();
-        let divide1_point = patchbay.get_point();
-        let fixed_point = patchbay.get_point();
-        let final_output = divide2_point.output();
 
-        let divide2 = Divide {
-            value: 2.0,
-            input: divide1_point.output(),
-            output: divide2_point,
+        let constant = Constant {
+            value: 0.8,
+            output: patchbay.point().unwrap(),
         };
         let divide1 = Divide {
             value: 4.0,
-            input: fixed_point.output(),
-            output: divide1_point,
+            input: constant.output.signal(),
+            output: patchbay.point().unwrap(),
         };
-        let fixed = Fixed {
-            value: 0.8,
-            output: fixed_point,
+        let divide2 = Divide {
+            value: 2.0,
+            input: divide1.output.signal(),
+            output: patchbay.point().unwrap(),
         };
 
+        let output = divide2.output.signal();
+
         let mut processor: Processor<SAMPLE_RATE, 3, _> = Processor::new([
-            Modules::Divide(divide1),
-            Modules::Divide(divide2),
-            Modules::Fixed(fixed),
+            Some(Modules::Divide(divide2)),
+            Some(Modules::Divide(divide1)),
+            Some(Modules::Constant(constant)),
         ]);
 
         processor.process_modules(&mut patchbay);
 
-        let result = patchbay.get_sample(final_output);
-
-        assert_eq!(result, Ok(0.1));
+        assert_eq!(patchbay.get(output), 0.1);
     }
 
     #[test]
     fn process_should_allow_circular_connections() {
-        let mut patchbay: Patchbay<32> = Patchbay::new();
-        let mix_point = patchbay.get_point();
-        let divide_point = patchbay.get_point();
-        let fixed_point = patchbay.get_point();
-        let divide_value = divide_point.output();
-        let final_output = mix_point.output();
+        let mut patchbay: Patchbay<3> = Patchbay::new();
 
+        let add_output = patchbay.point().unwrap();
+        let output = add_output.signal();
+
+        let constant = Constant {
+            value: 0.8,
+            output: patchbay.point().unwrap(),
+        };
         let divide = Divide {
             value: 2.0,
-            input: mix_point.output(),
-            output: divide_point,
+            input: output,
+            output: patchbay.point().unwrap(),
         };
-        let mix = Mix {
-            inputs: [fixed_point.output(), divide_value],
-            output: mix_point,
-        };
-        let fixed = Fixed {
-            value: 0.8,
-            output: fixed_point,
+        let add = Add {
+            x: constant.output.signal(),
+            y: divide.output.signal(),
+            output: add_output,
         };
 
         let mut processor: Processor<SAMPLE_RATE, 3, _> = Processor::new([
-            Modules::Mix(mix),
-            Modules::Fixed(fixed),
-            Modules::Divide(divide),
+            Some(Modules::Add(add)),
+            Some(Modules::Constant(constant)),
+            Some(Modules::Divide(divide)),
         ]);
 
         processor.process_modules(&mut patchbay);
-        let result = patchbay.get_sample(final_output);
-        assert_eq!(result, Ok(0.8));
+        assert_eq!(patchbay.get(output), 0.8);
 
         processor.process_modules(&mut patchbay);
-        let result = patchbay.get_sample(final_output);
-        assert_eq!(result, Ok(1.2));
+        assert_eq!(patchbay.get(output), 1.2);
     }
 }
